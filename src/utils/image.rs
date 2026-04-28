@@ -1,7 +1,6 @@
 use std::io::{Cursor, Error as IOError, ErrorKind, Read, Result, Write};
-use super::byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
-use super::png;
-use super::png::HasParameters;
+use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
+use png;
 use super::super::{ColorMode, Endian};
 
 pub trait ImageIO {
@@ -29,13 +28,13 @@ impl ImageIO for ColorMode {
     /// Converts some image in RGBA, BigEndian format to device specific data.
     fn rgba_to_device(&self, rgba: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
         match self {
-            &ColorMode::Rgba(Endian::Big) => Ok(Vec::from(rgba.clone())),
-            &ColorMode::Rgba(Endian::Little) => u32be_to_u32le(&rgba as &[u8], (w*h) as usize),
-            &ColorMode::Bgra(Endian::Big) => rgba_to_bgra::<BigEndian, _>(&rgba as &[u8], w, h),
-            &ColorMode::Bgra(Endian::Little) => rgba_to_bgra::<LittleEndian, _>(&rgba as &[u8], w, h),
-            &ColorMode::Rgb565(Endian::Big) =>
+            ColorMode::Rgba(Endian::Big) => Ok(rgba.to_vec()),
+            ColorMode::Rgba(Endian::Little) => u32be_to_u32le(rgba, (w * h) as usize),
+            ColorMode::Bgra(Endian::Big) => rgba_to_bgra::<BigEndian, _>(rgba, w, h),
+            ColorMode::Bgra(Endian::Little) => rgba_to_bgra::<LittleEndian, _>(rgba, w, h),
+            ColorMode::Rgb565(Endian::Big) =>
                 rgba_to_rgb565::<BigEndian, _>(&rgba as &[u8], w, h),
-            &ColorMode::Rgb565(Endian::Little) =>
+            ColorMode::Rgb565(Endian::Little) =>
                 rgba_to_rgb565::<LittleEndian, _>(&rgba as &[u8], w, h),
         }
     }
@@ -43,12 +42,12 @@ impl ImageIO for ColorMode {
     /// Converts some device specific image data to RGBA, BigEndian format.
     fn device_to_rgba(&self, device: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
         match self {
-            &ColorMode::Rgba(Endian::Big) => Ok(Vec::from(device.clone())),
-            &ColorMode::Rgba(Endian::Little) => u32be_to_u32le(&device as &[u8], device.len()),
-            &ColorMode::Bgra(Endian::Big) => rgba_to_bgra::<BigEndian, _>(&device as &[u8], w, h),
-            &ColorMode::Bgra(Endian::Little) => rgba_to_bgra::<LittleEndian, _>(&device as &[u8], w, h),
-            &ColorMode::Rgb565(Endian::Big) => rgb565_to_rgba::<BigEndian>(&device, w, h),
-            &ColorMode::Rgb565(Endian::Little) => rgb565_to_rgba::<LittleEndian>(&device, w, h),
+            ColorMode::Rgba(Endian::Big) => Ok(device.to_vec()),
+            ColorMode::Rgba(Endian::Little) => u32be_to_u32le(device, device.len() / 4),
+            ColorMode::Bgra(Endian::Big) => rgba_to_bgra::<BigEndian, _>(device, w, h),
+            ColorMode::Bgra(Endian::Little) => rgba_to_bgra::<LittleEndian, _>(device, w, h),
+            ColorMode::Rgb565(Endian::Big) => rgb565_to_rgba::<BigEndian>(device, w, h),
+            ColorMode::Rgb565(Endian::Little) => rgb565_to_rgba::<LittleEndian>(device, w, h),
         }
     }
 }
@@ -56,11 +55,12 @@ impl ImageIO for ColorMode {
 /// Reads a PNG source as bytes buffer the Rgba color mode.
 pub fn png_to_rgba<R: Read>(reader: R) -> Result<(Vec<u8>, u32, u32)> {
     let decoder = png::Decoder::new(reader);
-    let (info, mut png_reader) = decoder.read_info()?;
+    let mut png_reader = decoder.read_info()?;
     // Allocate the output buffer.
-    let mut buf = vec![0; info.buffer_size()];
+    let mut buf = vec![0; png_reader.output_buffer_size()];
     // png is supposed to contain a single frame.
-    png_reader.next_frame(&mut buf)?;
+    let info = png_reader.next_frame(&mut buf)?;
+    buf.truncate(info.buffer_size());
     Ok((buf, info.width, info.height))
 }
 
@@ -80,13 +80,14 @@ pub fn strip_alpha(data: &mut [u8]) {
 /// Writes an Rgba color mode byte buffer as PNG.
 pub fn rgba_to_png<W: Write>(writer: W, data: &[u8], w: u32, h: u32) -> Result<()> {
     let mut encoder = png::Encoder::new(writer, w, h);
-    encoder.set(png::ColorType::RGBA).set(png::BitDepth::Eight);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
     let mut png_writer = encoder.write_header()?;
-    png_writer.write_image_data(&data).map_err(|e| IOError::new(ErrorKind::InvalidData, e.to_string()))
+    png_writer.write_image_data(data).map_err(|e| IOError::new(ErrorKind::InvalidData, e.to_string()))
 }
 
 /// Converts RGBA byte buffer to Rgb565 with the specified endianness.
-pub fn rgba_to_bgra<O: ByteOrder, R: Read>(mut reader: R, w: u32, h: u32) -> Result<(Vec<u8>)> {
+pub fn rgba_to_bgra<O: ByteOrder, R: Read>(mut reader: R, w: u32, h: u32) -> Result<Vec<u8>> {
     let pixels = (w * h) as usize;
     let mut rgb565: Vec<u8> = Vec::with_capacity(pixels * 4);
     for _ in 0..pixels {
@@ -98,23 +99,23 @@ pub fn rgba_to_bgra<O: ByteOrder, R: Read>(mut reader: R, w: u32, h: u32) -> Res
 }
 
 /// Converts RGBA Big Endian to RGBA LittleEndian. It works also the other way round...
-pub fn u32be_to_u32le<R: Read>(mut reader: R, words: usize) -> Result<(Vec<u8>)> {
-    let mut rgbale: Vec<u8> = Vec::with_capacity(words);
+pub fn u32be_to_u32le<R: Read>(mut reader: R, words: usize) -> Result<Vec<u8>> {
+    let mut rgbale: Vec<u8> = Vec::with_capacity(words * 4);
     for _ in 0..words {
         // 'pivot' rgba is always BigEndian.
-        let color32 = reader.read_u32::<BigEndian>()? as u32;
+        let color32 = reader.read_u32::<BigEndian>()?;
         rgbale.write_u32::<LittleEndian>(rgba2bgra(color32))?;
     }
     Ok(rgbale)
 }
 
 /// Converts RGBA byte buffer to Rgb565 with the specified endianness.
-pub fn rgba_to_rgb565<O: ByteOrder, R: Read>(mut reader: R, w: u32, h: u32) -> Result<(Vec<u8>)> {
+pub fn rgba_to_rgb565<O: ByteOrder, R: Read>(mut reader: R, w: u32, h: u32) -> Result<Vec<u8>> {
     let pixels = (w * h) as usize;
     let mut rgb565: Vec<u8> = Vec::with_capacity(pixels * 2);
     for _ in 0..pixels {
         // 'pivot' rgba is always BigEndian.
-        let color32 = reader.read_u32::<BigEndian>()? as u32;
+        let color32 = reader.read_u32::<BigEndian>()?;
         rgb565.write_u16::<O>(rgba2rgb565(color32))?;
     }
     Ok(rgb565)

@@ -91,8 +91,8 @@ This [configuration](cli/resources/bin/mtklogo.yaml) file is loaded from the fol
 
 * specified by user `mtklogo unpack -c /path/to/my/configuration.yaml`
 * in user's home/config directory `~/.config/mtklogo.yaml`
-* as a sibling of the program itself `$(dirname $(which mtklogo))/mtklogo.yaml`
 * as a global configuration file `/etc/mtklogo.yaml`
+* as a sibling of the program itself `$(dirname $(which mtklogo))/mtklogo.yaml`
 
 The default configuration gives a list of common dimensions for "big" logos, assuming the images are encoded in 16 bits rgb.
 It contains two example profiles that you can adapt to your own device.
@@ -198,7 +198,7 @@ It could be 199680 x 4 ... 798720 = (2^10 * 3 * 5 * 13) * 4
 
 This is the easiest way to build and run the tool.
 
-This is built using rust 1.31.1.
+This now builds as a Rust 2024 edition project.
 Once you've the rust and cargo [tool chain](https://rustup.rs/), just install it:
 
 ```bash

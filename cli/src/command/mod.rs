@@ -5,7 +5,6 @@ pub use self::guess::run_guess;
 pub use self::repack::run_repack;
 pub use self::unpack::run_unpack;
 use std::fmt::Display;
-use super::mtklogo;
 
 mod unpack;
 mod repack;
@@ -59,7 +58,6 @@ pub fn data3<'a, I>(input: I) -> ANSIGenericString<'a, str>
     where I: Display + Sized{
     Colour::RGB(51,204,255).paint(format!("{}", input))
 }
-
 
 
 

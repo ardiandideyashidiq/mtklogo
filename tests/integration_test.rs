@@ -92,7 +92,7 @@ fn dither_rgb565() {
         assert_eq!(rgb_again.len(), rgba.len());
         // let's check that we have the same images but with a little degradation...
         compare_rasters(&rgba as &[u8], &rgb_again as &[u8], (w * h) as usize, 0xF8FCF800);
-    };
+    }
     // It should dither the same for big or little endian...
     test_it::<BigEndian>();
     test_it::<LittleEndian>();

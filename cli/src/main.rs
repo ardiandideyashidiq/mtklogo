@@ -1,15 +1,7 @@
-extern crate clap;
-extern crate mtklogo;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate serde_yaml;
-
-use clap::{App, Arg, ArgMatches, SubCommand};
-use command::{emphasize1, err, warn};
-pub use config::{Config, Format, Profile};
+use clap::{Arg, ArgAction, ArgMatches, Command};
+use crate::command::{emphasize1, err, warn};
+pub use crate::config::{Config, Format, Profile};
 use std::env;
-use std::error::Error;
 use std::io::{Error as IOError, ErrorKind, Result as IOResult};
 // re-exports entry points.
 use std::path::PathBuf;
@@ -24,7 +16,7 @@ fn main() {
     match wrapped_main() {
         Ok(()) => (),
         Err(e) => {
-            println!("{}: {}", warn("error"), err(e.description()));
+            println!("{}: {}", warn("error"), err(e));
             std::process::exit(1);
         }
     }
@@ -32,118 +24,118 @@ fn main() {
 
 fn wrapped_main() -> IOResult<()> {
     // defines common args amongst commands.
-    let slots_arg = Arg::with_name("slots")
+    let slots_arg = Arg::new("slots")
         .help("Extracts only these slots, other slot remain in raw .z format.")
         .value_name("slots")
-        .takes_value(true)
+        .num_args(1)
         .long("slots")
         .conflicts_with("zip");
 
-    let path_arg = Arg::with_name("path")
+    let path_arg = Arg::new("path")
         .help("Path to input `logo.bin`")
         .required(true)
-        .index(1)
-        .validator(is_existing_file);
+        .index(1);
 
-    let prg = App::new("mtklogo")
+    let prg = Command::new("mtklogo")
         .version("0.1.2")
         .author("arlept, arnaud@lepoint.net")
         .about("Yet another Android Logo Customizer for MTK devices!\nIt packs or repacks images from an MTK `logo.bin` file.")
-        .subcommand(SubCommand::with_name("unpack")
+        .subcommand(Command::new("unpack")
             .about("Unpacks a logo image")
-            .arg(Arg::with_name("profile")
+            .arg(Arg::new("profile")
                 .help("Uses an alternative profile name")
                 .value_name("profile")
-                .short("p")
+                .short('p')
                 .long("profile"))
-            .arg(Arg::with_name("config")
+            .arg(Arg::new("config")
                 .help("Uses an alternative configuration file")
                 .value_name("configfile")
-                .takes_value(true)
-                .short("c")
-                .long("config")
-                .validator(is_existing_file))
-            .arg(Arg::with_name("mode")
+                .num_args(1)
+                .short('c')
+                .long("config"))
+            .arg(Arg::new("mode")
                 .help("Overrides profile's color mode")
                 .value_name("mode")
-                .short("m")
+                .short('m')
                 .long("mode"))
-            .arg(Arg::with_name("flip")
+            .arg(Arg::new("flip")
                 .help("Flips orientation")
-                .short("f")
-                .long("flip"))
-            .arg(Arg::with_name("zip")
+                .short('f')
+                .long("flip")
+                .action(ArgAction::SetTrue))
+            .arg(Arg::new("zip")
                 .help("Do not convert to png, extract as plain .z file")
-                .short("z")
+                .short('z')
                 .long("zip")
+                .action(ArgAction::SetTrue)
                 .conflicts_with("slots"))
-            .arg(Arg::with_name("output")
+            .arg(Arg::new("output")
                 .help("Sets images output path")
                 .value_name("output")
-                .takes_value(true)
-                .short("o")
-                .long("output")
-                .validator(is_existing_directory))
-            .arg(Arg::with_name("no-out")
+                .num_args(1)
+                .short('o')
+                .long("output"))
+            .arg(Arg::new("no-out")
                 .help("Do not extract images, just checks image formats.")
-                .short("n")
+                .short('n')
                 .long("no-out")
+                .action(ArgAction::SetTrue)
                 .conflicts_with("output"))
-            .arg(&path_arg)
-            .arg(&slots_arg)
+            .arg(path_arg.clone())
+            .arg(slots_arg.clone())
         )
 
-        .subcommand(SubCommand::with_name("explore")
+        .subcommand(Command::new("explore")
             .about("Unpacks a logo image with the specified format\n\
 this is useful is you don't know the image format, you'll probably find out.")
-            .arg(Arg::with_name("output")
+            .arg(Arg::new("output")
                 .help("Sets images output directory")
                 .value_name("output")
-                .takes_value(true)
-                .short("o")
-                .long("output")
-                .validator(is_existing_directory))
-            .arg(Arg::with_name("width")
+                .num_args(1)
+                .short('o')
+                .long("output"))
+            .arg(Arg::new("width")
                 .help("Image width in pixels")
                 .value_name("width")
                 .required(true)
-                .takes_value(true)
-                .short("w")
+                .num_args(1)
+                .short('w')
                 .long("width"))
-            .arg(&path_arg)
-            .arg(&slots_arg)
+            .arg(path_arg.clone())
+            .arg(slots_arg.clone())
         )
 
-        .subcommand(SubCommand::with_name("guess")
+        .subcommand(Command::new("guess")
             .about("Tries to guess an image dimension knowing its buffer size.\n\
 Note: the program may be very slow if your input size is a large prime number!")
-            .arg(Arg::with_name("size")
+            .arg(Arg::new("size")
                 .help("Image size in bytes")
                 .value_name("size")
                 .required(true)
-                .takes_value(true)
-                .short("s")
+                .num_args(1)
+                .short('s')
                 .long("size"))
         )
 
-        .subcommand(SubCommand::with_name("repack")
+        .subcommand(Command::new("repack")
             .about("Repacks a logo image")
-            .arg(Arg::with_name("output")
+            .arg(Arg::new("output")
                 .value_name("output")
                 .help("Path to output `logo.bin`")
                 .required(true)
-                .takes_value(true)
-                .short("o")
+                .num_args(1)
+                .short('o')
                 .long("output"))
-            .arg(Arg::with_name("files")
+            .arg(Arg::new("files")
                 .help("Files to repack. Take care of specifying the exact set of files!")
                 .value_name("files")
-                .multiple(true)
+                .num_args(1..)
                 .required(true))
-            .arg(Arg::with_name("alpha")
+            .arg(Arg::new("alpha")
                 .help("Strips Alpha channel, assume image is opaque")
-                .short("a")
-                .long("alpha"))
+                .short('a')
+                .long("alpha")
+                .action(ArgAction::SetTrue))
         )
     ;
     let matches = prg.get_matches();
@@ -152,11 +144,11 @@ Note: the program may be very slow if your input size is a large prime number!")
 
     if let Some(matches) = matches.subcommand_matches("unpack") {
         let config = solve_config(matches)?;
-        let profile = matches.value_of("profile").unwrap_or("default");
-        let mode = matches.value_of("mode");
-        let flip = matches.is_present("flip");
-        let zip = matches.is_present("zip");
-        let check = matches.is_present("no-out");
+        let profile = matches.get_one::<String>("profile").map_or("default", String::as_str);
+        let mode = matches.get_one::<String>("mode").map(String::as_str);
+        let flip = matches.get_flag("flip");
+        let zip = matches.get_flag("zip");
+        let check = matches.get_flag("no-out");
         let path = solve_path(matches)?;
         let output = solve_output(matches)?;
         let slots = solve_slots(matches)?;
@@ -169,33 +161,33 @@ Note: the program may be very slow if your input size is a large prime number!")
         let slots = solve_slots(matches)?;
         command::run_explore(path, slots, output, width)
     } else if let Some(matches) = matches.subcommand_matches("repack") {
-        let maybe_files = matches.values_of("files")
+        let maybe_files = matches.get_many::<String>("files")
             .map(|vals| vals.collect::<Vec<_>>());
         let files = maybe_files.map_or_else(
             || Err(IOError::new(ErrorKind::Other, "no files to convert")),
             |f| Ok(f))?;
         let paths = files
             .iter()
-            .map(|f| PathBuf::from(f))
+            .map(|f| PathBuf::from(f.as_str()))
             .collect();
-        let output = matches.value_of("output")
-            .map(|o| PathBuf::from(o))
+        let output = matches.get_one::<String>("output")
+            .map(|o| PathBuf::from(o.as_str()))
             .unwrap_or(PathBuf::default());
-        let strip_alpha = matches.is_present("alpha");
+        let strip_alpha = matches.get_flag("alpha");
         command::run_repack(output, paths, strip_alpha)
     } else if let Some(matches) = matches.subcommand_matches("guess") {
         let size = parse_or_error::<usize>(matches, "size")?;
         command::run_guess(size)
     } else {
-        println!("{}", matches.usage());
+        println!("Use --help for usage.");
         Err(IOError::new(ErrorKind::InvalidInput, "unrecognized command arguments."))
     }
 }
 
 fn value_or_error(matches: &ArgMatches, label: &str) -> IOResult<String> {
-    matches.value_of(label).map_or_else(
+    matches.get_one::<String>(label).map_or_else(
         || Err(IOError::new(ErrorKind::InvalidInput, format!("'{}' unspecified.", label))),
-        |v| Ok(String::from(v)))
+        |v| Ok(v.clone()))
 }
 
 fn parse_or_error<T>(matches: &ArgMatches, label: &str) -> IOResult<T>
@@ -207,26 +199,32 @@ fn parse_or_error<T>(matches: &ArgMatches, label: &str) -> IOResult<T>
 
 
 fn solve_output(matches: &ArgMatches) -> IOResult<PathBuf> {
-    value_or_error(matches, "output")
-        .map(|o| PathBuf::from(o))
-        .or_else(|_| env::current_dir())
+    let output = value_or_error(matches, "output")
+        .map(PathBuf::from)
+        .or_else(|_| env::current_dir())?;
+    ensure_existing_directory(&output)?;
+    Ok(output)
 }
 
 fn solve_config(matches: &ArgMatches) -> IOResult<Config> {
-    match matches.value_of("config") {
+    match matches.get_one::<String>("config") {
         Some(c) => {
-            Config::from_file(PathBuf::from(c).as_path())
+            let path = PathBuf::from(c);
+            ensure_existing_file(&path)?;
+            Config::from_file(path.as_path())
         }
         None => Config::load()
     }
 }
 
 fn solve_path(matches: &ArgMatches) -> IOResult<PathBuf> {
-    value_or_error(matches, "path").map(|p| PathBuf::from(p))
+    let path = value_or_error(matches, "path").map(PathBuf::from)?;
+    ensure_existing_file(&path)?;
+    Ok(path)
 }
 
 fn solve_slots(matches: &ArgMatches) -> IOResult<Option<Vec<usize>>> {
-    match matches.value_of("slots") {
+    match matches.get_one::<String>("slots") {
         Some(slots) => {
             let tokens: Vec<&str> = slots.split(',').collect();
             let mut sizes: Vec<usize> = Vec::with_capacity(tokens.len());
@@ -242,19 +240,18 @@ fn solve_slots(matches: &ArgMatches) -> IOResult<Option<Vec<usize>>> {
     }
 }
 
-fn is_existing_directory(val: String) -> Result<(), String> {
-    let path = PathBuf::from(val);
-    if path.exists() && path.is_dir() {
+fn ensure_existing_file(path: &PathBuf) -> IOResult<()> {
+    if path.exists() {
         Ok(())
     } else {
-        Err(String::from("must be an existing directory."))
+        Err(IOError::new(ErrorKind::InvalidInput, format!("{} must be an existing file.", path.display())))
     }
 }
 
-fn is_existing_file(val: String) -> Result<(), String> {
-    if PathBuf::from(val).exists() {
+fn ensure_existing_directory(path: &PathBuf) -> IOResult<()> {
+    if path.exists() && path.is_dir() {
         Ok(())
     } else {
-        Err(String::from("must be an existing file."))
+        Err(IOError::new(ErrorKind::InvalidInput, format!("{} must be an existing directory.", path.display())))
     }
 }

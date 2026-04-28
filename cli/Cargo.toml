@@ -3,15 +3,15 @@
 [package]
 name = "mtklogo-cli"
 version = "0.1.2"
+edition = "2024"
 authors = ["arlept <arnaud@lepoint.net>"]
 # see https://spdx.org/licenses/
 license = "MIT OR Apache-2.0"
 description = "A Rust library and CLIT tool for parsing MTK logo images."
-respository = "https://github.com/arlept/mtkimgrs"
+repository = "https://github.com/arlept/mtkimgrs"
 keywords= ["Android","MTK","Logo"]
 categories = ["command-line-utilities"]
 readme = "README.md"
-maintenance = { status = "as-is" }
 
 [[bin]]
 name = "mtklogo"
@@ -20,13 +20,12 @@ path = "src/main.rs"
 [dependencies]
 mtklogo = {version = "0.1.2", path = "../"}
 # command line parsing
-clap = "2.32.0"
+clap = "4.5"
 # colored output
 ansi_term = "0.11.0"
 # configuration file parsing
-serde = "1.0.84"
-serde_derive = "1.0.84"
-serde_yaml = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
 
 [profile.release]
 # tries reducing the binary size.

@@ -1,7 +1,6 @@
+use serde::{Deserialize, Serialize};
 use serde_yaml;
-use std::convert::From;
 use std::env;
-use std::error::Error;
 use std::fs::File;
 use std::io::{Error as IOError, ErrorKind, Result};
 use std::path::{Path, PathBuf};
@@ -31,7 +30,7 @@ impl Profile {
         let pixels = size / bpp;
         let o = self.formats.iter()
             .find(|f| f.w * f.h == pixels)
-            .map(|f| { f.clone() });
+            .cloned();
         match o {
             Some(f) => {
                 if flip {
@@ -77,33 +76,36 @@ impl Config {
     /// - `"mtklogo.yaml"` in $HOME/.config
     /// - `"mtklogo.yaml"` in /etc
     /// - `"mtklogo.yaml"` in program's installation directory
+    fn candidate_paths(home: Option<&Path>, current_exe: &Path) -> Vec<PathBuf> {
+        let mut candidates = Vec::with_capacity(3);
+
+        if let Some(home) = home {
+            candidates.push(home.join(".config").join(Self::RELATIVE_CONFIG));
+        }
+
+        candidates.push(PathBuf::from(Self::GLOBAL_CONFIG));
+
+        if let Some(parent) = current_exe.parent() {
+            candidates.push(parent.join(Self::RELATIVE_CONFIG));
+        }
+
+        candidates
+    }
+
     fn config_path() -> Result<(PathBuf, File)> {
-        // in home directory?
-        let home_config = {
-            #[allow(deprecated)] // hey i'm fine with a basic 'env::$HOME' behaviour.
-            let mut home = env::home_dir().ok_or(IOError::new(ErrorKind::NotFound, "No home directory."))?;
-            home.push(".config");
-            home.push(Self::RELATIVE_CONFIG);
-            File::open(home.as_path()).map(|f| (home, f))
-        };
-        // in /etc?
-        let etc_config = {
-            File::open(Config::GLOBAL_CONFIG).map(|f| (PathBuf::from(Config::GLOBAL_CONFIG), f))
-        };
-        // along with the executable?
-        let shipped_config = {
-            let self_dir = env::current_exe()?;
-            let parent = self_dir.parent()
-                .ok_or(IOError::new(ErrorKind::NotFound, "Current executable is not inside a folder"))?; /* seriously ? */
-            let mut self_config = PathBuf::from(parent);
-            self_config.push(Self::RELATIVE_CONFIG);
-            File::open(self_config.as_path()).map(|f| (self_config, f))
-        };
-        home_config
-            .or_else(|_| etc_config)
-            .or_else(|_| shipped_config)
-            .map_err(|_| IOError::new(ErrorKind::NotFound,
-                                      "`mtklogo.yaml` configuration not found, please provide one."))
+        let home = env::var_os("HOME").map(PathBuf::from);
+        let current_exe = env::current_exe()?;
+
+        for candidate in Self::candidate_paths(home.as_deref(), current_exe.as_path()) {
+            if let Ok(file) = File::open(candidate.as_path()) {
+                return Ok((candidate, file));
+            }
+        }
+
+        Err(IOError::new(
+            ErrorKind::NotFound,
+            "`mtklogo.yaml` configuration not found, please provide one.",
+        ))
     }
 
     fn wrap_read(path: &Path, file: File) -> Result<Config> {
@@ -111,7 +113,7 @@ impl Config {
         config.map_err(
             |e| IOError::new(ErrorKind::InvalidData,
                              format!(
-                                 "could not read config {} -> '{}'", path.display(), e.description())))
+                                 "could not read config {} -> '{}'", path.display(), e)))
     }
 
     pub fn from_file(path: &Path) -> Result<Config> {
@@ -121,5 +123,28 @@ impl Config {
 
     pub fn load() -> Result<Config> {
         Config::config_path().and_then(|(path, file)| Self::wrap_read(path.as_path(), file))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Config;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn config_candidates_follow_home_then_etc_then_executable_order() {
+        let home = Path::new("/tmp/home");
+        let exe = Path::new("/tmp/bin/mtklogo");
+
+        let candidates = Config::candidate_paths(Some(home), exe);
+
+        assert_eq!(
+            candidates,
+            vec![
+                PathBuf::from("/tmp/home/.config/mtklogo.yaml"),
+                PathBuf::from("/etc/mtklogo.yaml"),
+                PathBuf::from("/tmp/bin/mtklogo.yaml"),
+            ]
+        );
     }
 }

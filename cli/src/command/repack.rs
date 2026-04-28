@@ -1,9 +1,9 @@
+use mtklogo::{ContentType, FileInfo, LogoImage};
+use mtklogo::utils::{image, image::ImageIO, load_raw, z_lib};
 use std::fs::File;
 use std::io::{BufWriter, Error as IOError, ErrorKind, Result};
 use std::path::PathBuf;
 use super::{cmd, data1, data2, emphasize1, emphasize2};
-use super::mtklogo::{ContentType, FileInfo, LogoImage};
-use super::mtklogo::utils::{image, image::ImageIO, load_raw, z_lib};
 
 pub fn run_repack(outpath: PathBuf, files: Vec<PathBuf>, strip_alpha: bool) -> Result<()> {
     println!("{} {} files into {} stripping alpha: {}.",

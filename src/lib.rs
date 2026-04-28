@@ -1,5 +1,3 @@
-extern crate byteorder;
-
 pub use mtk::{LogoImage, LogoTable, MtkHeader, MtkType};
 use std::fmt;
 use std::fmt::Display;
@@ -65,9 +63,9 @@ impl ColorMode {
     /// How many bytes are required to encode a single pixel?
     pub fn bytes_per_pixel(&self) -> u32 {
         match self {
-            &ColorMode::Rgba(_) => 4,
-            &ColorMode::Bgra(_) => 4,
-            &ColorMode::Rgb565(_) => 2,
+            ColorMode::Rgba(_) => 4,
+            ColorMode::Bgra(_) => 4,
+            ColorMode::Rgb565(_) => 2,
         }
     }
 }

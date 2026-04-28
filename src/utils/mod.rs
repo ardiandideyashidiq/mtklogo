@@ -1,7 +1,4 @@
-extern crate png;
-
 use std::io::{Read, Result};
-use super::byteorder;
 
 pub mod image;
 
@@ -17,9 +14,8 @@ pub mod z_lib_flate2;
 #[cfg(feature = "flate2")]
 pub use self::z_lib_flate2 as z_lib;
 
-pub fn load_raw<R: Read>(mut reader: R) -> Result<(Vec<u8>)> {
+pub fn load_raw<R: Read>(mut reader: R) -> Result<Vec<u8>> {
     let mut buf = Vec::with_capacity(8192); // no idea how to size it.
     reader.read_to_end(&mut buf)?;
     Ok(buf)
 }
-

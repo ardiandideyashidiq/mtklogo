@@ -1,11 +1,10 @@
-use Profile;
-use std::error::Error;
+use crate::Profile;
+use mtklogo::{ColorMode, ContentType, FileInfo, LogoImage};
+use mtklogo::utils::{image::ImageIO, z_lib};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Error as IOError, ErrorKind, Result, Write};
 use std::path::PathBuf;
 use super::{cmd, data1, data2, data3, emphasize1, emphasize2, err, warn};
-use super::mtklogo::{ColorMode, ContentType, FileInfo, LogoImage};
-use super::mtklogo::utils::{image::ImageIO, z_lib};
 use super::super::config::{Config, Format};
 
 pub fn run_unpack(config: Config, slots: Option<Vec<usize>>, profile_name: &str,
@@ -85,7 +84,7 @@ fn extract_logo<F>(id: usize, blob: &Vec<u8>, zip: bool, color_mode: &ColorMode,
                     println!("{} slot {} as {} because {}. Falling back to raw .z.",
                              warn("Could not export"),
                              data1(id), emphasize1(e),
-                             err(er.description()), );
+                             err(er), );
                     // invalidates names.
                     let info = FileInfo::from_info(id, true, color_mode);
                     // computes the output name.
@@ -115,7 +114,7 @@ fn check_logo<F>(id: usize, blob: &Vec<u8>, zip: bool, color_mode: &ColorMode, o
                 });
             if let Some(er) = exported.err() {
                 println!("{} slot {} ({} bytes) as an image : {}",
-                         warn("Cannot export"), id, blob.len(), warn(er.description()));
+                         warn("Cannot export"), id, blob.len(), warn(er));
             }
         }
     };
