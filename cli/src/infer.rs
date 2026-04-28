@@ -67,10 +67,12 @@ const KNOWN_FORMATS: &[(u32, u32, u32)] = &[
     (57, 64, 65),
     (120, 120, 74),
     (192, 120, 76),
+    (24, 19, 62),
     (84, 121, 55),
     (108, 121, 55),
     (163, 29, 65),
     (163, 1, 80),
+    (304, 27, 77),
     (304, 52, 50),
     (304, 1, 70),
     (720, 1280, 85),
@@ -287,11 +289,11 @@ pub fn infer_profile(inflated_sizes: &[u32], screen_hint: Option<ScreenHint>, sc
                     _ => true,
                 }
             })
-            .max_by(|a, b| a.score.cmp(&b.score));
+            .next();
 
         let fallback = candidates.iter()
             .filter(|candidate| candidate.inference.mode == mode)
-            .max_by(|a, b| a.score.cmp(&b.score));
+            .next();
 
         if let Some(candidate) = best_for_mode.or(fallback) {
             if !formats.contains(&candidate.inference.format) {
@@ -374,6 +376,26 @@ mod tests {
     }
 
     #[test]
+    fn infer_slot_prefers_1080x2436_over_1440x1827() {
+        let guesses = infer_slot(10_523_520, None, ScreenHintMode::Prefer);
+
+        assert_eq!(guesses.first().map(|g| &g.mode), Some(&ColorMode::Bgra(Endian::Big)));
+        assert_eq!(
+            guesses.first().map(|g| &g.format),
+            Some(&InferredFormat { width: 1080, height: 2436 })
+        );
+    }
+
+    #[test]
+    fn infer_profile_prefers_1080x2436_for_cm6_large_slots() {
+        let inferred = infer_profile(&[10_523_520, 10_523_520, 10_523_520, 10_523_520], None, ScreenHintMode::Prefer)
+            .expect("profile should be inferred");
+
+        assert!(inferred.formats.contains(&InferredFormat { width: 1080, height: 2436 }));
+        assert_eq!(inferred.formats.first(), Some(&InferredFormat { width: 1080, height: 2436 }));
+    }
+
+    #[test]
     fn infer_slot_prefers_1920x1200_for_tablet_fullscreen_size() {
         let guesses = infer_slot(9_216_000, None, ScreenHintMode::Prefer);
 
@@ -428,6 +450,18 @@ mod tests {
         assert_eq!(
             guesses_57600.first().map(|g| &g.format),
             Some(&InferredFormat { width: 120, height: 120 })
+        );
+
+        let guesses_32832 = infer_slot(32_832, None, ScreenHintMode::Prefer);
+        assert_eq!(
+            guesses_32832.first().map(|g| &g.format),
+            Some(&InferredFormat { width: 304, height: 27 })
+        );
+
+        let guesses_1824 = infer_slot(1_824, None, ScreenHintMode::Prefer);
+        assert_eq!(
+            guesses_1824.first().map(|g| &g.format),
+            Some(&InferredFormat { width: 24, height: 19 })
         );
     }
 
