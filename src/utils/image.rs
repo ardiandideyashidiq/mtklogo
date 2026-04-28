@@ -1,6 +1,7 @@
 use std::io::{Cursor, Error as IOError, ErrorKind, Read, Result, Write};
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use png;
+use png::HasParameters;
 use super::super::{ColorMode, Endian};
 
 pub trait ImageIO {
@@ -32,10 +33,8 @@ impl ImageIO for ColorMode {
             ColorMode::Rgba(Endian::Little) => u32be_to_u32le(rgba, (w * h) as usize),
             ColorMode::Bgra(Endian::Big) => rgba_to_bgra::<BigEndian, _>(rgba, w, h),
             ColorMode::Bgra(Endian::Little) => rgba_to_bgra::<LittleEndian, _>(rgba, w, h),
-            ColorMode::Rgb565(Endian::Big) =>
-                rgba_to_rgb565::<BigEndian, _>(&rgba as &[u8], w, h),
-            ColorMode::Rgb565(Endian::Little) =>
-                rgba_to_rgb565::<LittleEndian, _>(&rgba as &[u8], w, h),
+            ColorMode::Rgb565(Endian::Big) => rgba_to_rgb565::<BigEndian, _>(rgba, w, h),
+            ColorMode::Rgb565(Endian::Little) => rgba_to_rgb565::<LittleEndian, _>(rgba, w, h),
         }
     }
 
@@ -55,12 +54,11 @@ impl ImageIO for ColorMode {
 /// Reads a PNG source as bytes buffer the Rgba color mode.
 pub fn png_to_rgba<R: Read>(reader: R) -> Result<(Vec<u8>, u32, u32)> {
     let decoder = png::Decoder::new(reader);
-    let mut png_reader = decoder.read_info()?;
+    let (info, mut png_reader) = decoder.read_info()?;
     // Allocate the output buffer.
-    let mut buf = vec![0; png_reader.output_buffer_size()];
+    let mut buf = vec![0; info.buffer_size()];
     // png is supposed to contain a single frame.
-    let info = png_reader.next_frame(&mut buf)?;
-    buf.truncate(info.buffer_size());
+    png_reader.next_frame(&mut buf)?;
     Ok((buf, info.width, info.height))
 }
 
@@ -80,10 +78,9 @@ pub fn strip_alpha(data: &mut [u8]) {
 /// Writes an Rgba color mode byte buffer as PNG.
 pub fn rgba_to_png<W: Write>(writer: W, data: &[u8], w: u32, h: u32) -> Result<()> {
     let mut encoder = png::Encoder::new(writer, w, h);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
+    encoder.set(png::ColorType::RGBA).set(png::BitDepth::Eight);
     let mut png_writer = encoder.write_header()?;
-    png_writer.write_image_data(data).map_err(|e| IOError::new(ErrorKind::InvalidData, e.to_string()))
+    png_writer.write_image_data(&data).map_err(|e| IOError::new(ErrorKind::InvalidData, e.to_string()))
 }
 
 /// Converts RGBA byte buffer to Rgb565 with the specified endianness.
@@ -92,7 +89,7 @@ pub fn rgba_to_bgra<O: ByteOrder, R: Read>(mut reader: R, w: u32, h: u32) -> Res
     let mut rgb565: Vec<u8> = Vec::with_capacity(pixels * 4);
     for _ in 0..pixels {
         // 'pivot' rgba is always BigEndian.
-        let color32 = reader.read_u32::<BigEndian>()? as u32;
+        let color32 = reader.read_u32::<BigEndian>()?;
         rgb565.write_u32::<O>(rgba2bgra(color32))?;
     }
     Ok(rgb565)

@@ -1,9 +1,9 @@
-use mtklogo::{ColorMode, ContentType, FileInfo, LogoImage};
-use mtklogo::utils::{image::ImageIO, z_lib};
 use std::fs::File;
 use std::io::{BufReader, Result};
 use std::path::PathBuf;
 use super::{cmd, data1, data2, data3, emphasize1, emphasize2, err, warn};
+use super::mtklogo::{ColorMode, ContentType, FileInfo, LogoImage};
+use super::mtklogo::utils::{image::ImageIO, z_lib};
 
 pub fn run_explore(path: PathBuf, slots: Option<Vec<usize>>, output: PathBuf, width: u32) -> Result<()> {
     println!("{} file {}, width hint {}, saving to {}",

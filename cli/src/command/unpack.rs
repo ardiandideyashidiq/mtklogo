@@ -1,10 +1,10 @@
 use crate::Profile;
-use mtklogo::{ColorMode, ContentType, FileInfo, LogoImage};
-use mtklogo::utils::{image::ImageIO, z_lib};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Error as IOError, ErrorKind, Result, Write};
 use std::path::PathBuf;
 use super::{cmd, data1, data2, data3, emphasize1, emphasize2, err, warn};
+use super::mtklogo::{ColorMode, ContentType, FileInfo, LogoImage};
+use super::mtklogo::utils::{image::ImageIO, z_lib};
 use super::super::config::{Config, Format};
 
 pub fn run_unpack(config: Config, slots: Option<Vec<usize>>, profile_name: &str,

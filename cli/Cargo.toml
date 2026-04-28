@@ -20,7 +20,7 @@ path = "src/main.rs"
 [dependencies]
 mtklogo = {version = "0.1.2", path = "../"}
 # command line parsing
-clap = "4.5"
+clap = "2.32.0"
 # colored output
 ansi_term = "0.11.0"
 # configuration file parsing

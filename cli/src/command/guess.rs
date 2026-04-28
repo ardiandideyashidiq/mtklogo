@@ -1,9 +1,9 @@
-use mtklogo::ColorMode;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Display;
 use std::io::Result;
 use super::{cmd, emphasize1, data1, data2, data3};
+use super::mtklogo::ColorMode;
 
 #[derive(Clone)]
 struct Factor {
