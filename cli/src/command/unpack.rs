@@ -1,5 +1,5 @@
 use crate::Profile;
-use crate::infer::{infer_profile, ScreenHint};
+use crate::infer::{infer_profile, screen_hint_status, ScreenHint, ScreenHintMode, ScreenHintStatus};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Error as IOError, ErrorKind, Result, Write};
 use std::path::PathBuf;
@@ -36,7 +36,7 @@ pub fn run_unpack(config: Config, slots: Option<Vec<usize>>, profile_name: &str,
 }
 
 pub fn run_unpack_auto(slots: Option<Vec<usize>>, mode: Option<&str>, flip: bool, zip: bool, check: bool,
-                       path: PathBuf, output: PathBuf, screen_hint: Option<ScreenHint>) -> Result<()> {
+                       path: PathBuf, output: PathBuf, screen_hint: Option<ScreenHint>, screen_hint_mode: ScreenHintMode) -> Result<()> {
     let file = File::open(&path)?;
     let mut reader = BufReader::new(file);
     let image = LogoImage::read(&mut reader)?;
@@ -45,7 +45,7 @@ pub fn run_unpack_auto(slots: Option<Vec<usize>>, mode: Option<&str>, flip: bool
         .map(|blob| z_lib::inflate(blob as &[u8]).map(|inflated| inflated.len() as u32))
         .collect::<Result<Vec<_>>>()?;
 
-    let mut profile = infer_profile(&inflated_sizes, screen_hint)
+    let mut profile = infer_profile(&inflated_sizes, screen_hint, screen_hint_mode)
         .ok_or_else(|| IOError::new(ErrorKind::InvalidData, "could not infer a profile from logo image"))?
         .to_profile("auto");
 
@@ -57,6 +57,14 @@ pub fn run_unpack_auto(slots: Option<Vec<usize>>, mode: Option<&str>, flip: bool
                  Some(ScreenHint { width, height }) => format!(" using screen hint {}x{}", width, height),
                  None => String::new(),
              });
+
+    if let Some(screen_hint) = screen_hint {
+        match screen_hint_status(&inflated_sizes, screen_hint) {
+            ScreenHintStatus::Matched => {}
+            ScreenHintStatus::Swapped => println!("{} screen hint only matched after swapping orientation.", warn("warning")),
+            ScreenHintStatus::NoExactMatch => println!("{} screen hint did not match any inflated slot size exactly.", warn("warning")),
+        }
+    }
 
     unpack_with_profile(&mut profile, slots, mode, flip, zip, check, path, output)
 }

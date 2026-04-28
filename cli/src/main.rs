@@ -6,7 +6,7 @@ extern crate serde_yaml;
 use clap::{App, Arg, ArgMatches, SubCommand};
 use command::{emphasize1, err, warn};
 pub use config::{Config, Format, Profile};
-use infer::ScreenHint;
+use infer::{ScreenHint, ScreenHintMode};
 use std::env;
 use std::io::{Error as IOError, ErrorKind, Result as IOResult};
 // re-exports entry points.
@@ -77,6 +77,10 @@ fn wrapped_main() -> IOResult<()> {
                 .takes_value(true)
                 .long("screen")
                 .validator(is_screen_resolution))
+            .arg(Arg::with_name("screen-strict")
+                .help("Requires auto-detection to use only candidates matching --screen")
+                .long("screen-strict")
+                .requires("screen"))
             .arg(Arg::with_name("flip")
                 .help("Flips orientation")
                 .short("f")
@@ -143,6 +147,10 @@ Note: the program may be very slow if your input size is a large prime number!")
                 .takes_value(true)
                 .long("screen")
                 .validator(is_screen_resolution))
+            .arg(Arg::with_name("screen-strict")
+                .help("Requires inference to use only candidates matching --screen")
+                .long("screen-strict")
+                .requires("screen"))
             .arg(&path_arg)
             .arg(&slots_arg)
         )
@@ -176,6 +184,7 @@ Note: the program may be very slow if your input size is a large prime number!")
         let profile = matches.value_of("profile").unwrap_or("default");
         let mode = matches.value_of("mode");
         let screen = solve_screen(matches)?;
+        let screen_mode = solve_screen_mode(matches);
         let flip = matches.is_present("flip");
         let zip = matches.is_present("zip");
         let check = matches.is_present("no-out");
@@ -184,7 +193,7 @@ Note: the program may be very slow if your input size is a large prime number!")
         let slots = solve_slots(matches)?;
 
         if auto {
-            command::run_unpack_auto(slots, mode, flip, zip, check, path, output, screen)
+            command::run_unpack_auto(slots, mode, flip, zip, check, path, output, screen, screen_mode)
         } else {
             let config = solve_config(matches)?;
             command::run_unpack(config, slots, profile, mode, flip, zip, check, path, output)
@@ -217,7 +226,8 @@ Note: the program may be very slow if your input size is a large prime number!")
         let path = solve_path(matches)?;
         let slots = solve_slots(matches)?;
         let screen = solve_screen(matches)?;
-        command::run_infer_profile(path, slots, screen)
+        let screen_mode = solve_screen_mode(matches);
+        command::run_infer_profile(path, slots, screen, screen_mode)
     } else {
         println!("{}", matches.usage());
         Err(IOError::new(ErrorKind::InvalidInput, "unrecognized command arguments."))
@@ -278,6 +288,14 @@ fn solve_screen(matches: &ArgMatches) -> IOResult<Option<ScreenHint>> {
     match matches.value_of("screen") {
         Some(screen) => parse_screen_hint(screen).map(Some),
         None => Ok(None),
+    }
+}
+
+fn solve_screen_mode(matches: &ArgMatches) -> ScreenHintMode {
+    if matches.is_present("screen-strict") {
+        ScreenHintMode::Strict
+    } else {
+        ScreenHintMode::Prefer
     }
 }
 

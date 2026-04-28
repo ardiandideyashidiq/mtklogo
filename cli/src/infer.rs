@@ -7,6 +7,12 @@ pub struct ScreenHint {
     pub height: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScreenHintMode {
+    Prefer,
+    Strict,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InferredFormat {
     pub width: u32,
@@ -44,6 +50,13 @@ impl ProfileInference {
 struct ScoredInference {
     inference: SlotInference,
     score: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScreenHintStatus {
+    Matched,
+    Swapped,
+    NoExactMatch,
 }
 
 const KNOWN_FORMATS: &[(u32, u32, u32)] = &[
@@ -115,7 +128,7 @@ fn is_large_format(width: u32, height: u32) -> bool {
     width * height >= 1_000_000
 }
 
-fn scored_candidates(inflated_size: u32, screen_hint: Option<ScreenHint>) -> Vec<ScoredInference> {
+fn scored_candidates(inflated_size: u32, screen_hint: Option<ScreenHint>, screen_hint_mode: ScreenHintMode) -> Vec<ScoredInference> {
     let mut guesses = Vec::new();
 
     for mode in preferred_modes() {
@@ -125,6 +138,27 @@ fn scored_candidates(inflated_size: u32, screen_hint: Option<ScreenHint>) -> Vec
         }
 
         let pixels = inflated_size / bpp;
+
+        if let Some(ScreenHint { width, height }) = screen_hint {
+            if width * height == pixels {
+                guesses.push(ScoredInference {
+                    inference: SlotInference {
+                        mode: mode.clone(),
+                        format: InferredFormat { width, height },
+                    },
+                    score: 150 + mode_bias(&mode),
+                });
+            }
+            if width != height && height * width == pixels {
+                guesses.push(ScoredInference {
+                    inference: SlotInference {
+                        mode: mode.clone(),
+                        format: InferredFormat { width: height, height: width },
+                    },
+                    score: 150 + mode_bias(&mode),
+                });
+            }
+        }
 
         for &(width, height, base_score) in KNOWN_FORMATS {
             if width * height == pixels {
@@ -169,6 +203,13 @@ fn scored_candidates(inflated_size: u32, screen_hint: Option<ScreenHint>) -> Vec
             .then_with(|| b.inference.format.width.cmp(&a.inference.format.width))
     });
     guesses.dedup_by(|a, b| a.inference == b.inference);
+    if screen_hint_mode == ScreenHintMode::Strict {
+        guesses.retain(|candidate| screen_hint_bias(
+            candidate.inference.format.width,
+            candidate.inference.format.height,
+            screen_hint,
+        ) >= 160);
+    }
     guesses
 }
 
@@ -204,10 +245,10 @@ fn dominant_orientation(all_candidates: &[Vec<ScoredInference>], mode: &ColorMod
     }
 }
 
-pub fn infer_profile(inflated_sizes: &[u32], screen_hint: Option<ScreenHint>) -> Option<ProfileInference> {
+pub fn infer_profile(inflated_sizes: &[u32], screen_hint: Option<ScreenHint>, screen_hint_mode: ScreenHintMode) -> Option<ProfileInference> {
     let all_candidates: Vec<Vec<ScoredInference>> = inflated_sizes
         .iter()
-        .map(|&size| scored_candidates(size, screen_hint))
+        .map(|&size| scored_candidates(size, screen_hint, screen_hint_mode))
         .collect();
 
     let mut best_mode: Option<(ColorMode, u32)> = None;
@@ -263,11 +304,38 @@ pub fn infer_profile(inflated_sizes: &[u32], screen_hint: Option<ScreenHint>) ->
     Some(ProfileInference { mode, formats })
 }
 
-pub fn infer_slot(inflated_size: u32, screen_hint: Option<ScreenHint>) -> Vec<SlotInference> {
-    scored_candidates(inflated_size, screen_hint)
+pub fn infer_slot(inflated_size: u32, screen_hint: Option<ScreenHint>, screen_hint_mode: ScreenHintMode) -> Vec<SlotInference> {
+    scored_candidates(inflated_size, screen_hint, screen_hint_mode)
         .into_iter()
         .map(|candidate| candidate.inference)
         .collect()
+}
+
+pub fn screen_hint_status(inflated_sizes: &[u32], screen_hint: ScreenHint) -> ScreenHintStatus {
+    let area = screen_hint.width * screen_hint.height;
+    let mut matched = false;
+    let mut swapped = false;
+
+    for &size in inflated_sizes {
+        for mode in preferred_modes() {
+            let bpp = mode.bytes_per_pixel();
+            if size / bpp == area {
+                if screen_hint.width >= screen_hint.height {
+                    matched = true;
+                } else {
+                    swapped = true;
+                }
+            }
+        }
+    }
+
+    if matched {
+        ScreenHintStatus::Matched
+    } else if swapped {
+        ScreenHintStatus::Swapped
+    } else {
+        ScreenHintStatus::NoExactMatch
+    }
 }
 
 fn screen_hint_bias(width: u32, height: u32, screen_hint: Option<ScreenHint>) -> u32 {
@@ -291,12 +359,12 @@ fn screen_hint_bias(width: u32, height: u32, screen_hint: Option<ScreenHint>) ->
 
 #[cfg(test)]
 mod tests {
-    use super::{infer_profile, infer_slot, InferredFormat, ScreenHint};
+    use super::{infer_profile, infer_slot, screen_hint_status, InferredFormat, ScreenHint, ScreenHintMode, ScreenHintStatus};
     use mtklogo::{ColorMode, Endian};
 
     #[test]
     fn infer_slot_prefers_1080x2400_for_10368000_bytes() {
-        let guesses = infer_slot(10_368_000, None);
+        let guesses = infer_slot(10_368_000, None, ScreenHintMode::Prefer);
 
         assert_eq!(guesses.first().map(|g| &g.mode), Some(&ColorMode::Bgra(Endian::Big)));
         assert_eq!(
@@ -307,7 +375,7 @@ mod tests {
 
     #[test]
     fn infer_slot_prefers_1920x1200_for_tablet_fullscreen_size() {
-        let guesses = infer_slot(9_216_000, None);
+        let guesses = infer_slot(9_216_000, None, ScreenHintMode::Prefer);
 
         assert_eq!(guesses.first().map(|g| &g.mode), Some(&ColorMode::Bgra(Endian::Big)));
         assert_eq!(
@@ -320,7 +388,7 @@ mod tests {
     fn infer_profile_groups_common_large_and_small_assets() {
         let inferred = infer_profile(&[
             10_368_000, 10_368_000, 10_368_000, 11_520, 10_752, 10_080, 896,
-        ], None).expect("profile should be inferred");
+        ], None, ScreenHintMode::Prefer).expect("profile should be inferred");
 
         assert_eq!(inferred.mode, ColorMode::Bgra(Endian::Big));
         assert!(inferred.formats.contains(&InferredFormat { width: 1080, height: 2400 }));
@@ -332,31 +400,31 @@ mod tests {
 
     #[test]
     fn infer_slot_prefers_small_symbol_formats_from_real_file_sizes() {
-        let guesses_10752 = infer_slot(10_752, None);
+        let guesses_10752 = infer_slot(10_752, None, ScreenHintMode::Prefer);
         assert_eq!(
             guesses_10752.first().map(|g| &g.format),
             Some(&InferredFormat { width: 42, height: 64 })
         );
 
-        let guesses_10080 = infer_slot(10_080, None);
+        let guesses_10080 = infer_slot(10_080, None, ScreenHintMode::Prefer);
         assert_eq!(
             guesses_10080.first().map(|g| &g.format),
             Some(&InferredFormat { width: 45, height: 56 })
         );
 
-        let guesses_896 = infer_slot(896, None);
+        let guesses_896 = infer_slot(896, None, ScreenHintMode::Prefer);
         assert_eq!(
             guesses_896.first().map(|g| &g.format),
             Some(&InferredFormat { width: 14, height: 16 })
         );
 
-        let guesses_92160 = infer_slot(92_160, None);
+        let guesses_92160 = infer_slot(92_160, None, ScreenHintMode::Prefer);
         assert_eq!(
             guesses_92160.first().map(|g| &g.format),
             Some(&InferredFormat { width: 192, height: 120 })
         );
 
-        let guesses_57600 = infer_slot(57_600, None);
+        let guesses_57600 = infer_slot(57_600, None, ScreenHintMode::Prefer);
         assert_eq!(
             guesses_57600.first().map(|g| &g.format),
             Some(&InferredFormat { width: 120, height: 120 })
@@ -367,7 +435,7 @@ mod tests {
     fn infer_profile_prefers_landscape_tablet_family() {
         let inferred = infer_profile(&[
             9_216_000, 9_216_000, 92_160, 92_160, 57_600, 57_600,
-        ], None).expect("profile should be inferred");
+        ], None, ScreenHintMode::Prefer).expect("profile should be inferred");
 
         assert_eq!(inferred.mode, ColorMode::Bgra(Endian::Big));
         assert!(inferred.formats.contains(&InferredFormat { width: 1920, height: 1200 }));
@@ -377,7 +445,7 @@ mod tests {
 
     #[test]
     fn inferred_profile_converts_to_unpack_profile() {
-        let inferred = infer_profile(&[10_368_000, 11_520], None).expect("profile should be inferred");
+        let inferred = infer_profile(&[10_368_000, 11_520], None, ScreenHintMode::Prefer).expect("profile should be inferred");
         let profile = inferred.to_profile("auto");
 
         assert_eq!(profile.name, "auto");
@@ -390,7 +458,7 @@ mod tests {
     #[test]
     fn screen_hint_prefers_exact_tablet_resolution() {
         let hint = ScreenHint { width: 1920, height: 1200 };
-        let guesses = infer_slot(9_216_000, Some(hint));
+        let guesses = infer_slot(9_216_000, Some(hint), ScreenHintMode::Prefer);
 
         assert_eq!(
             guesses.first().map(|g| &g.format),
@@ -401,11 +469,38 @@ mod tests {
     #[test]
     fn screen_hint_accepts_swapped_orientation() {
         let hint = ScreenHint { width: 1200, height: 1920 };
-        let guesses = infer_slot(9_216_000, Some(hint));
+        let guesses = infer_slot(9_216_000, Some(hint), ScreenHintMode::Prefer);
 
         assert_eq!(
             guesses.first().map(|g| &g.format),
             Some(&InferredFormat { width: 1920, height: 1200 })
         );
+    }
+
+    #[test]
+    fn screen_hint_creates_exact_candidate_for_unknown_resolution() {
+        let hint = ScreenHint { width: 720, height: 1612 };
+        let guesses = infer_slot(4_642_560, Some(hint), ScreenHintMode::Prefer);
+
+        assert_eq!(
+            guesses.first().map(|g| &g.format),
+            Some(&InferredFormat { width: 720, height: 1612 })
+        );
+    }
+
+    #[test]
+    fn strict_screen_hint_returns_no_guess_when_blob_math_disagrees() {
+        let hint = ScreenHint { width: 720, height: 1612 };
+        let guesses = infer_slot(10_627_200, Some(hint), ScreenHintMode::Strict);
+
+        assert!(guesses.is_empty());
+    }
+
+    #[test]
+    fn screen_hint_status_reports_no_exact_match() {
+        let hint = ScreenHint { width: 720, height: 1612 };
+        let status = screen_hint_status(&[10_627_200], hint);
+
+        assert_eq!(status, ScreenHintStatus::NoExactMatch);
     }
 }
