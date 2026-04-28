@@ -2,7 +2,9 @@ extern crate ansi_term;
 use self::ansi_term::{ANSIGenericString, Colour};
 pub use self::explore::run_explore;
 pub use self::guess::run_guess;
+pub use self::infer_profile::run_infer_profile;
 pub use self::repack::run_repack;
+pub use self::unpack::run_unpack_auto;
 pub use self::unpack::run_unpack;
 use std::fmt::Display;
 use super::mtklogo;
@@ -11,6 +13,7 @@ mod unpack;
 mod repack;
 mod explore;
 mod guess;
+mod infer_profile;
 
 /// formats a command.
 pub fn cmd<'a, I>(input: I) -> ANSIGenericString<'a, str>
@@ -59,7 +62,5 @@ pub fn data3<'a, I>(input: I) -> ANSIGenericString<'a, str>
     where I: Display + Sized{
     Colour::RGB(51,204,255).paint(format!("{}", input))
 }
-
-
 
 

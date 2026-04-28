@@ -6,6 +6,7 @@ extern crate serde_yaml;
 use clap::{App, Arg, ArgMatches, SubCommand};
 use command::{emphasize1, err, warn};
 pub use config::{Config, Format, Profile};
+use infer::ScreenHint;
 use std::env;
 use std::io::{Error as IOError, ErrorKind, Result as IOResult};
 // re-exports entry points.
@@ -13,6 +14,7 @@ use std::path::PathBuf;
 
 mod command;
 mod config;
+mod infer;
 
 // logo generated from http://www.patorjk.com/software/taag/#p=display&h=1&v=3&f=Doom&t=mtklogo
 const LOGO: &'static [u8] = include_bytes!("../resources/logo.txt");
@@ -65,6 +67,16 @@ fn wrapped_main() -> IOResult<()> {
                 .value_name("mode")
                 .short("m")
                 .long("mode"))
+            .arg(Arg::with_name("auto")
+                .help("Infers a profile from the logo image")
+                .long("auto")
+                .conflicts_with_all(&["config", "profile"]))
+            .arg(Arg::with_name("screen")
+                .help("Hints the target screen resolution as WIDTHxHEIGHT")
+                .value_name("screen")
+                .takes_value(true)
+                .long("screen")
+                .validator(is_screen_resolution))
             .arg(Arg::with_name("flip")
                 .help("Flips orientation")
                 .short("f")
@@ -123,6 +135,18 @@ Note: the program may be very slow if your input size is a large prime number!")
                 .long("size"))
         )
 
+        .subcommand(SubCommand::with_name("infer-profile")
+            .about("Infers a likely profile from a logo image")
+            .arg(Arg::with_name("screen")
+                .help("Hints the target screen resolution as WIDTHxHEIGHT")
+                .value_name("screen")
+                .takes_value(true)
+                .long("screen")
+                .validator(is_screen_resolution))
+            .arg(&path_arg)
+            .arg(&slots_arg)
+        )
+
         .subcommand(SubCommand::with_name("repack")
             .about("Repacks a logo image")
             .arg(Arg::with_name("output")
@@ -148,9 +172,10 @@ Note: the program may be very slow if your input size is a large prime number!")
     println!("{}", emphasize1(String::from_utf8_lossy(LOGO)));
 
     if let Some(matches) = matches.subcommand_matches("unpack") {
-        let config = solve_config(matches)?;
+        let auto = matches.is_present("auto");
         let profile = matches.value_of("profile").unwrap_or("default");
         let mode = matches.value_of("mode");
+        let screen = solve_screen(matches)?;
         let flip = matches.is_present("flip");
         let zip = matches.is_present("zip");
         let check = matches.is_present("no-out");
@@ -158,7 +183,12 @@ Note: the program may be very slow if your input size is a large prime number!")
         let output = solve_output(matches)?;
         let slots = solve_slots(matches)?;
 
-        command::run_unpack(config, slots, profile, mode, flip, zip, check, path, output)
+        if auto {
+            command::run_unpack_auto(slots, mode, flip, zip, check, path, output, screen)
+        } else {
+            let config = solve_config(matches)?;
+            command::run_unpack(config, slots, profile, mode, flip, zip, check, path, output)
+        }
     } else if let Some(matches) = matches.subcommand_matches("explore") {
         let path = solve_path(matches)?;
         let output = solve_output(matches)?;
@@ -183,6 +213,11 @@ Note: the program may be very slow if your input size is a large prime number!")
     } else if let Some(matches) = matches.subcommand_matches("guess") {
         let size = parse_or_error::<usize>(matches, "size")?;
         command::run_guess(size)
+    } else if let Some(matches) = matches.subcommand_matches("infer-profile") {
+        let path = solve_path(matches)?;
+        let slots = solve_slots(matches)?;
+        let screen = solve_screen(matches)?;
+        command::run_infer_profile(path, slots, screen)
     } else {
         println!("{}", matches.usage());
         Err(IOError::new(ErrorKind::InvalidInput, "unrecognized command arguments."))
@@ -239,6 +274,27 @@ fn solve_slots(matches: &ArgMatches) -> IOResult<Option<Vec<usize>>> {
     }
 }
 
+fn solve_screen(matches: &ArgMatches) -> IOResult<Option<ScreenHint>> {
+    match matches.value_of("screen") {
+        Some(screen) => parse_screen_hint(screen).map(Some),
+        None => Ok(None),
+    }
+}
+
+fn parse_screen_hint(screen: &str) -> IOResult<ScreenHint> {
+    let tokens: Vec<&str> = screen.split('x').collect();
+    if tokens.len() != 2 {
+        return Err(IOError::new(ErrorKind::InvalidInput, "screen must be WIDTHxHEIGHT"));
+    }
+
+    let width = tokens[0].parse::<u32>()
+        .map_err(|_| IOError::new(ErrorKind::InvalidInput, "screen width must be an integer"))?;
+    let height = tokens[1].parse::<u32>()
+        .map_err(|_| IOError::new(ErrorKind::InvalidInput, "screen height must be an integer"))?;
+
+    Ok(ScreenHint { width, height })
+}
+
 fn is_existing_directory(val: String) -> Result<(), String> {
     let path = PathBuf::from(val);
     if path.exists() && path.is_dir() {
@@ -254,4 +310,10 @@ fn is_existing_file(val: String) -> Result<(), String> {
     } else {
         Err(String::from("must be an existing file."))
     }
+}
+
+fn is_screen_resolution(val: String) -> Result<(), String> {
+    parse_screen_hint(&val)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }

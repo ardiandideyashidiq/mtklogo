@@ -1,4 +1,5 @@
 use crate::Profile;
+use crate::infer::{infer_profile, ScreenHint};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Error as IOError, ErrorKind, Result, Write};
 use std::path::PathBuf;
@@ -29,17 +30,48 @@ pub fn run_unpack(config: Config, slots: Option<Vec<usize>>, profile_name: &str,
     let mut profile = match maybe_profile {
         Some(p) => Ok(p.clone()),
         None => Err(IOError::new(ErrorKind::InvalidData,
-                                 format!("profile '{}' is not declared in configuration file", profile_name)))
+                                  format!("profile '{}' is not declared in configuration file", profile_name)))
     }?;
+    unpack_with_profile(&mut profile, slots, mode, flip, zip, check, path, output)
+}
+
+pub fn run_unpack_auto(slots: Option<Vec<usize>>, mode: Option<&str>, flip: bool, zip: bool, check: bool,
+                       path: PathBuf, output: PathBuf, screen_hint: Option<ScreenHint>) -> Result<()> {
+    let file = File::open(&path)?;
+    let mut reader = BufReader::new(file);
+    let image = LogoImage::read(&mut reader)?;
+
+    let inflated_sizes: Vec<u32> = image.blobs.iter()
+        .map(|blob| z_lib::inflate(blob as &[u8]).map(|inflated| inflated.len() as u32))
+        .collect::<Result<Vec<_>>>()?;
+
+    let mut profile = infer_profile(&inflated_sizes, screen_hint)
+        .ok_or_else(|| IOError::new(ErrorKind::InvalidData, "could not infer a profile from logo image"))?
+        .to_profile("auto");
+
+    println!("{} inferred profile {} with color mode {}{}.",
+             cmd("unpack"),
+             data1(&profile.name),
+             data2(&profile.color_model),
+             match screen_hint {
+                 Some(ScreenHint { width, height }) => format!(" using screen hint {}x{}", width, height),
+                 None => String::new(),
+             });
+
+    unpack_with_profile(&mut profile, slots, mode, flip, zip, check, path, output)
+}
+
+fn unpack_with_profile(profile: &mut Profile, slots: Option<Vec<usize>>, mode: Option<&str>,
+                       flip: bool, zip: bool, check: bool, path: PathBuf, output: PathBuf) -> Result<()> {
     // User may override color model.
     if let Some(model) = mode {
-        profile = profile.with_color_model(String::from(model));
+        *profile = profile.clone().with_color_model(String::from(model));
     };
     let mtk_color_model = ColorMode::by_name(&profile.color_model)?;
     println!("{} file {} with profile {}, color mode {}, flip orientation: {} to directory {}.",
              cmd("unpack"),
              emphasize1(path.display()),
-             data1(profile_name),
+             data1(&profile.name),
              data2(format!("{}", mtk_color_model)),
              emphasize1(format!("{}", flip)),
              emphasize1(output.display()));
