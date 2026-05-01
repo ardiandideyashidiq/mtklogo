@@ -1,5 +1,7 @@
 # Copilot instructions for mtklogo
 
+- use pnpm instead of npm
+
 ## Build, test, and run
 
 - Root crate (library + integration tests): `cargo test`

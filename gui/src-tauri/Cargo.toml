@@ -1,0 +1,21 @@
+[package]
+name = "mtklogo-gui"
+version = "0.1.2"
+edition = "2024"
+authors = ["arlept <arnaud@lepoint.net>"]
+license = "MIT OR Apache-2.0"
+description = "Tauri GUI for MTK logo images."
+repository = "https://github.com/arlept/mtkimgrs"
+readme = "../../README.md"
+
+[lib]
+name = "mtklogo_gui"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+mtklogo = { path = "../../" }
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2" }
+
+[build-dependencies]
+tauri-build = { version = "2" }

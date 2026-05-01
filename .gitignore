@@ -5,3 +5,6 @@ target
 *.bin
 .idea
 *.iml
+gui/node_modules
+gui/dist
+gui/src-tauri/target

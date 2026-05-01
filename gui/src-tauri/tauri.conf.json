@@ -1,0 +1,29 @@
+{
+  "productName": "mtklogo GUI",
+  "version": "0.1.2",
+  "identifier": "com.arlept.mtklogo.gui",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "mtklogo GUI",
+        "width": 1280,
+        "height": 900
+      }
+    ],
+    "security": {
+      "capabilities": ["default"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.png"]
+  }
+}

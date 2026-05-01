@@ -49,6 +49,16 @@ Type `mtklogo help` to list all commands.
 
 Type `mtklogo help <command>` to get help for a specific command.
 
+### GUI
+
+A desktop GUI lives in `gui/` and shares the same Rust core as the CLI.
+
+```bash
+cd gui
+npm install
+npm run tauri:dev
+```
+
 ### Main usage
 
 * You manage to get the `logo.bin` image corresponding to your device.
