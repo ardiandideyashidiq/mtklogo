@@ -23,13 +23,8 @@ export function UnpackPanel({
   const canUnpack = binPath.length > 0 && screenResolution.length > 0;
 
   return (
-    <div className="space-y-4">
-      <header className="space-y-1">
-        <h1 className="text-lg font-semibold">1. Unpack logo.bin</h1>
-        <p className="text-sm text-muted-foreground">Select a source .bin file, set screen resolution, then extract.</p>
-      </header>
-
-      <div className="grid gap-3">
+    <div className="space-y-6">
+      <div className="grid gap-4">
         <label className="space-y-1.5">
           <span className="text-sm font-medium">Source .bin file</span>
           <div className="flex gap-2">
@@ -51,11 +46,10 @@ export function UnpackPanel({
         </label>
       </div>
 
-      <div className="flex min-h-9 items-center gap-3">
+      <div className="flex items-center gap-3 pt-1">
         <Button onClick={onUnpack} disabled={!canUnpack || busy !== null}>
           {busy === "unpack" ? "Unpacking..." : "Unpack"}
         </Button>
-        <p className="text-xs text-muted-foreground">Creates a timestamped folder beside the input .bin file.</p>
       </div>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}

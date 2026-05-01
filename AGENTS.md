@@ -1,26 +1,23 @@
 # AGENTS.md
 
-## Structure
-- This repo is not a Cargo workspace. The root crate is the reusable library; the CLI is a separate crate in `cli/`.
-- Library entrypoints are in `src/lib.rs`, `src/mtk/*`, and `src/utils/*`.
-- CLI entrypoint is `cli/src/main.rs`; subcommands live in `cli/src/command/*`; YAML config loading lives in `cli/src/config/mod.rs`.
+## Repo Map
+- Not a Cargo workspace: root crate `mtklogo` is the reusable library, `cli/` is a separate crate, and `gui/` is a separate Tauri app.
+- Library entrypoints are `src/lib.rs`, `src/mtk/*`, and `src/utils/*`.
+- CLI entrypoint is `cli/src/main.rs`; subcommands live in `cli/src/command/*`; YAML config loading is in `cli/src/config/mod.rs`.
+- GUI frontend lives in `gui/`; Tauri wiring is in `gui/src-tauri/`.
 
 ## Commands
-- Test the library and integration fixtures from the repo root with `cargo test`.
-- Test the CLI crate separately with `cargo test --manifest-path cli/Cargo.toml`.
-- Run the CLI with `cargo run --manifest-path cli/Cargo.toml -- <subcommand> ...`.
-- Run one integration test with `cargo test --test integration_test <test_name>`.
+- Root library + integration tests: `cargo test`.
+- One root integration test: `cargo test --test integration_test <test_name>`.
+- CLI crate: `cargo test --manifest-path cli/Cargo.toml`.
+- Run the CLI: `cargo run --manifest-path cli/Cargo.toml -- <subcommand> ...`.
+- GUI dev/build: `cd gui && npm run tauri:dev` / `npm run tauri:build`.
 
-## Workflow Notes
-- Because the CLI is a separate crate, root commands do not cover it; verify both crates when touching shared code or CLI behavior.
-- Root build artifacts go to `target/`; CLI build artifacts go to `cli/target/`.
-- The repo now targets Rust 2024 in both `Cargo.toml` files; keep root and CLI manifests aligned when changing toolchain or dependency versions.
-
-## Config And Fixtures
-- The sample CLI config is `cli/resources/bin/mtklogo.yaml`.
-- Actual config lookup order in code is: `~/.config/mtklogo.yaml`, then `/etc/mtklogo.yaml`, then `mtklogo.yaml` next to the executable. README prose disagrees; trust `cli/src/config/mod.rs`.
-- Integration tests read fixture images from `resources/tests/` and require no external services.
-
-## Current Toolchain Reality
-- `cargo test` and `cargo test --manifest-path cli/Cargo.toml` currently pass cleanly on a modern toolchain after the Rust 2024 and warning-cleanup work. Treat new warnings as regressions, not baseline noise.
-- The library defaults to feature `with-flate2`; optional `with-libflate` changes compression behavior and test expectations.
+## Repo Rules
+- Root commands do not cover `cli/` or `gui/`; verify the affected crate(s) when touching shared code or CLI behavior.
+- Config lookup for `mtklogo.yaml` is: `-c` override, then `~/.config/mtklogo.yaml`, then `/etc/mtklogo.yaml`, then `mtklogo.yaml` next to the executable.
+- Sample CLI config: `cli/resources/bin/mtklogo.yaml`.
+- Integration fixtures are under `resources/tests/` and require no external services.
+- `unpack`/`repack` file names are slot-indexed: `logo_{:03}_{mode}.png` or `logo_{:03}_raw.z`; `repack` uses slot order and does not require contiguous or unique indices.
+- Default compression backend is `with-flate2`; `with-libflate` changes compression behavior and test expectations.
+- Keep root `Cargo.toml` and `cli/Cargo.toml` aligned on edition/toolchain changes.

@@ -15,11 +15,7 @@ impl Profile {
         let mtk_color_model = ColorMode::by_name(&self.color_model)?;
         let bpp = mtk_color_model.bytes_per_pixel();
         let pixels = size / bpp;
-        let format = self
-            .formats
-            .iter()
-            .find(|f| f.w * f.h == pixels)
-            .cloned();
+        let format = self.formats.iter().find(|f| f.w * f.h == pixels).cloned();
 
         match format {
             Some(found) => {

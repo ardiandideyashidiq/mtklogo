@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <link rel="icon" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (() => {
+        const storageKey = "mtklogo.theme";
+        const choice = localStorage.getItem(storageKey) || "system";
+        const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const resolved = choice === "dark" || (choice === "system" && systemDark) ? "dark" : "light";
+        document.documentElement.dataset.theme = resolved;
+        document.documentElement.dataset.themeChoice = choice;
+        document.documentElement.style.colorScheme = resolved;
+      })();
+    </script>
     <title>mtklogo GUI</title>
   </head>
   <body>

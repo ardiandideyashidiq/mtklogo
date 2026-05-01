@@ -199,7 +199,9 @@ fn scored_candidates(
                         mode: mode.clone(),
                         format: InferredFormat { width, height },
                     },
-                    score: base_score + mode_bias(&mode) + screen_hint_bias(width, height, screen_hint),
+                    score: base_score
+                        + mode_bias(&mode)
+                        + screen_hint_bias(width, height, screen_hint),
                 });
             }
         }
@@ -253,12 +255,18 @@ enum Orientation {
     Landscape,
 }
 
-fn dominant_orientation(all_candidates: &[Vec<ScoredInference>], mode: &ColorMode) -> Option<Orientation> {
+fn dominant_orientation(
+    all_candidates: &[Vec<ScoredInference>],
+    mode: &ColorMode,
+) -> Option<Orientation> {
     let mut portrait_score = 0;
     let mut landscape_score = 0;
 
     for candidates in all_candidates {
-        for candidate in candidates.iter().filter(|candidate| candidate.inference.mode == *mode) {
+        for candidate in candidates
+            .iter()
+            .filter(|candidate| candidate.inference.mode == *mode)
+        {
             let format = &candidate.inference.format;
             if is_large_format(format.width, format.height) {
                 if is_landscape(format.width, format.height) {
@@ -293,7 +301,11 @@ pub fn infer_profile(
     for mode in preferred_modes() {
         let score = all_candidates
             .iter()
-            .filter_map(|candidates| candidates.iter().find(|candidate| candidate.inference.mode == mode))
+            .filter_map(|candidates| {
+                candidates
+                    .iter()
+                    .find(|candidate| candidate.inference.mode == mode)
+            })
             .map(|candidate| candidate.score)
             .sum::<u32>();
 
@@ -317,7 +329,9 @@ pub fn infer_profile(
             .filter(|candidate| {
                 let format = &candidate.inference.format;
                 match preferred_orientation {
-                    Some(Orientation::Landscape) if is_large_format(format.width, format.height) => {
+                    Some(Orientation::Landscape)
+                        if is_large_format(format.width, format.height) =>
+                    {
                         is_landscape(format.width, format.height)
                     }
                     Some(Orientation::Portrait) if is_large_format(format.width, format.height) => {
@@ -328,7 +342,10 @@ pub fn infer_profile(
             })
             .next();
 
-        let fallback = candidates.iter().filter(|candidate| candidate.inference.mode == mode).next();
+        let fallback = candidates
+            .iter()
+            .filter(|candidate| candidate.inference.mode == mode)
+            .next();
 
         if let Some(candidate) = best_for_mode.or(fallback) {
             if !formats.contains(&candidate.inference.format) {

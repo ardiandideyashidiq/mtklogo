@@ -1,14 +1,13 @@
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 type Panel = "unpack" | "repack";
+type ThemeChoice = "light" | "dark" | "system";
 
 type SidebarShellProps = {
   activePanel: Panel;
   onSelectPanel: (panel: Panel) => void;
-  busy: "unpack" | "repack" | null;
-  binPath: string;
-  unpackedDir: string;
+  themeChoice: ThemeChoice;
+  onThemeChange: (choice: ThemeChoice) => void;
   children: React.ReactNode;
 };
 
@@ -17,24 +16,23 @@ const navItems: Array<{ id: Panel; title: string; subtitle: string }> = [
   { id: "repack", title: "Repack", subtitle: "Build .bin from folder" },
 ];
 
-export function SidebarShell({ activePanel, onSelectPanel, busy, binPath, unpackedDir, children }: SidebarShellProps) {
-  const status = busy ? `${busy === "unpack" ? "Unpacking" : "Repacking"}...` : "Ready";
+const themeItems: Array<{ id: ThemeChoice; label: string }> = [
+  { id: "light", label: "Light" },
+  { id: "dark", label: "Dark" },
+  { id: "system", label: "System" },
+];
 
+export function SidebarShell({ activePanel, onSelectPanel, themeChoice, onThemeChange, children }: SidebarShellProps) {
   return (
-    <main className="mx-auto flex h-full w-full max-w-6xl gap-3 p-3">
-      <aside className="flex w-64 shrink-0 flex-col rounded-lg border bg-card p-3">
-        <div className="space-y-1 border-b pb-3">
-          <p className="text-sm font-semibold">mtklogo utility</p>
-          <p className="text-xs text-muted-foreground">Desktop workflow for MTK logo files</p>
-        </div>
-
-        <nav className="mt-3 space-y-1.5">
+    <main className="mx-auto flex h-full w-full max-w-7xl flex-col gap-4 p-3 sm:p-4 lg:flex-row lg:gap-5">
+      <aside className="flex w-full flex-col rounded-lg border bg-card p-4 sm:p-5 lg:w-64 lg:shrink-0">
+        <nav className="grid gap-2 md:grid-cols-2 lg:grid-cols-1">
           {navItems.map((item) => (
             <button
               key={item.id}
               onClick={() => onSelectPanel(item.id)}
               className={cn(
-                "w-full rounded-md border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                "w-full rounded-md border px-4 py-3 text-left leading-snug transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                 activePanel === item.id
                   ? "border-primary/50 bg-primary/10"
                   : "border-border bg-background hover:bg-muted/40",
@@ -46,17 +44,29 @@ export function SidebarShell({ activePanel, onSelectPanel, busy, binPath, unpack
           ))}
         </nav>
 
-        <div className="mt-auto space-y-2 rounded-md border bg-background p-3 text-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Status</span>
-            <Badge>{status}</Badge>
+        <div className="mt-5 space-y-3 border-t pt-4 lg:mt-auto">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Theme</p>
+          <div className="grid grid-cols-3 gap-1.5 rounded-md border bg-background p-1.5">
+            {themeItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onThemeChange(item.id)}
+                className={cn(
+                  "rounded-sm px-2.5 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                  themeChoice === item.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                )}
+                aria-pressed={themeChoice === item.id}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
-          <p className="truncate text-muted-foreground">Input: {binPath || "none"}</p>
-          <p className="truncate text-muted-foreground">Latest unpack: {unpackedDir || "none"}</p>
         </div>
+
       </aside>
 
-      <section className="min-w-0 flex-1 rounded-lg border bg-card p-4">{children}</section>
+      <section className="min-w-0 flex-1 rounded-lg border bg-card p-5 sm:p-6">{children}</section>
     </main>
   );
 }
