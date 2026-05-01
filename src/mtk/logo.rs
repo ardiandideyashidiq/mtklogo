@@ -45,7 +45,9 @@ impl LogoTable {
         for _ in 0..(logo_count as usize) {
             offsets.push(reader.read_u32::<LittleEndian>()?);
         }
-        Ok(LogoTable { header, logo_count, block_size, offsets })
+        let table = LogoTable { header, logo_count, block_size, offsets };
+        table.validate()?;
+        Ok(table)
     }
 
     /// Writes the logo table (the table only, not the logos).
@@ -72,10 +74,7 @@ impl LogoTable {
 
     /// Given this logo table, extract the i-th logo as blobs from the specified reader.
     pub fn read_blob<R: Read + Seek>(&self, reader: &mut R, i: usize) -> Result<Vec<u8>> {
-        let offsets = &self.offsets;
-        let logo_count = self.logo_count as usize;
-        let offset = offsets[i];
-        let next_offset = if i < logo_count - 1 { offsets[i + 1] } else { self.block_size };
+        let (offset, next_offset) = self.blob_bounds(i)?;
         let size = next_offset - offset;
         // We must inflate the image to guess its dimensions.
         reader.seek(SeekFrom::Start(offset as u64 + MtkHeader::SIZE as u64))?;
@@ -83,6 +82,40 @@ impl LogoTable {
         let mut data: Vec<u8> = vec![0; size as usize];
         reader.read_exact(&mut data)?;
         Ok(data)
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.offsets.len() != self.logo_count as usize {
+            return Err(IOError::new(ErrorKind::InvalidData, "logo offset count does not match logo count"));
+        }
+
+        let mut previous = 0;
+        for (index, &offset) in self.offsets.iter().enumerate() {
+            if offset > self.block_size {
+                return Err(IOError::new(ErrorKind::InvalidData, format!("logo offset {} exceeds block size", index)));
+            }
+            if index > 0 && offset < previous {
+                return Err(IOError::new(ErrorKind::InvalidData, "logo offsets are not ordered"));
+            }
+            previous = offset;
+        }
+
+        Ok(())
+    }
+
+    fn blob_bounds(&self, i: usize) -> Result<(u32, u32)> {
+        let offset = self.offsets.get(i).copied().ok_or_else(|| {
+            IOError::new(ErrorKind::InvalidInput, format!("blob index {} out of range", i))
+        })?;
+        let next_offset = if i + 1 < self.offsets.len() {
+            self.offsets[i + 1]
+        } else {
+            self.block_size
+        };
+        if next_offset < offset {
+            return Err(IOError::new(ErrorKind::InvalidData, "logo offsets are not ordered"));
+        }
+        Ok((offset, next_offset))
     }
 }
 
@@ -123,5 +156,35 @@ impl LogoImage {
             writer.write_all(blob)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn read_blob_rejects_out_of_range_index() {
+        let table = LogoImage::new_blobs(vec![vec![1, 2, 3]]).table;
+        let mut reader = Cursor::new(vec![0; 1024]);
+
+        let err = table.read_blob(&mut reader, 1).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn read_rejects_unsorted_offsets() {
+        let mut buffer = Vec::new();
+        let header = MtkHeader { size: 64, mtk_type: MtkType::LOGO };
+        header.write(&mut buffer).unwrap();
+        buffer.write_u32::<LittleEndian>(2).unwrap();
+        buffer.write_u32::<LittleEndian>(64).unwrap();
+        buffer.write_u32::<LittleEndian>(32).unwrap();
+        buffer.write_u32::<LittleEndian>(16).unwrap();
+
+        let mut reader = Cursor::new(buffer);
+        let err = LogoTable::read(&mut reader).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
     }
 }

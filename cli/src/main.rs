@@ -45,7 +45,7 @@ fn wrapped_main() -> IOResult<()> {
         .validator(is_existing_file);
 
     let prg = App::new("mtklogo")
-        .version("0.1.2")
+        .version(env!("CARGO_PKG_VERSION"))
         .author("arlept, arnaud@lepoint.net")
         .about("Yet another Android Logo Customizer for MTK devices!\nIt packs or repacks images from an MTK `logo.bin` file.")
         .subcommand(SubCommand::with_name("unpack")
@@ -270,7 +270,10 @@ fn solve_path(matches: &ArgMatches) -> IOResult<PathBuf> {
 fn solve_slots(matches: &ArgMatches) -> IOResult<Option<Vec<usize>>> {
     match matches.value_of("slots") {
         Some(slots) => {
-            let tokens: Vec<&str> = slots.split(',').collect();
+            let tokens: Vec<&str> = slots.split(',').map(|token| token.trim()).collect();
+            if tokens.iter().any(|token| token.is_empty()) {
+                return Err(IOError::new(ErrorKind::InvalidInput, "slots must be a comma-separated list of integers"));
+            }
             let mut sizes: Vec<usize> = Vec::with_capacity(tokens.len());
             for s in tokens.iter() {
                 let value = s.parse::<usize>()
@@ -300,8 +303,11 @@ fn solve_screen_mode(matches: &ArgMatches) -> ScreenHintMode {
 }
 
 fn parse_screen_hint(screen: &str) -> IOResult<ScreenHint> {
-    let tokens: Vec<&str> = screen.split('x').collect();
+    let tokens: Vec<&str> = screen.split('x').map(|token| token.trim()).collect();
     if tokens.len() != 2 {
+        return Err(IOError::new(ErrorKind::InvalidInput, "screen must be WIDTHxHEIGHT"));
+    }
+    if tokens.iter().any(|token| token.is_empty()) {
         return Err(IOError::new(ErrorKind::InvalidInput, "screen must be WIDTHxHEIGHT"));
     }
 
@@ -315,7 +321,7 @@ fn parse_screen_hint(screen: &str) -> IOResult<ScreenHint> {
 
 fn is_existing_directory(val: String) -> Result<(), String> {
     let path = PathBuf::from(val);
-    if path.exists() && path.is_dir() {
+    if path.is_dir() {
         Ok(())
     } else {
         Err(String::from("must be an existing directory."))
@@ -323,7 +329,7 @@ fn is_existing_directory(val: String) -> Result<(), String> {
 }
 
 fn is_existing_file(val: String) -> Result<(), String> {
-    if PathBuf::from(val).exists() {
+    if PathBuf::from(val).is_file() {
         Ok(())
     } else {
         Err(String::from("must be an existing file."))
@@ -334,4 +340,56 @@ fn is_screen_resolution(val: String) -> Result<(), String> {
     parse_screen_hint(&val)
         .map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_existing_directory, is_existing_file, parse_screen_hint, solve_slots};
+    use clap::{App, Arg};
+    use std::fs::{self, File};
+    use std::io::Write;
+    use std::path::PathBuf;
+
+    fn test_matches(args: &[&str]) -> clap::ArgMatches<'static> {
+        App::new("mtklogo")
+            .arg(Arg::with_name("slots").long("slots").takes_value(true))
+            .get_matches_from_safe(args.iter().copied())
+            .unwrap()
+    }
+
+    #[test]
+    fn parse_screen_hint_accepts_whitespace() {
+        let hint = parse_screen_hint(" 1080x1920 ").unwrap();
+        assert_eq!(hint.width, 1080);
+        assert_eq!(hint.height, 1920);
+    }
+
+    #[test]
+    fn solve_slots_accepts_whitespace_and_rejects_empty_items() {
+        let matches = test_matches(&["mtklogo", "--slots", "0, 1,2"]);
+        assert_eq!(solve_slots(&matches).unwrap(), Some(vec![0, 1, 2]));
+
+        let matches = test_matches(&["mtklogo", "--slots", "0,,2"]);
+        assert!(solve_slots(&matches).is_err());
+    }
+
+    #[test]
+    fn validators_distinguish_files_and_directories() {
+        let mut dir = std::env::temp_dir();
+        dir.push(format!("mtklogo-cli-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+
+        let mut file = PathBuf::from(&dir);
+        file.push("input.bin");
+        let mut handle = File::create(&file).unwrap();
+        handle.write_all(b"test").unwrap();
+
+        assert!(is_existing_directory(dir.to_string_lossy().into_owned()).is_ok());
+        assert!(is_existing_directory(file.to_string_lossy().into_owned()).is_err());
+        assert!(is_existing_file(file.to_string_lossy().into_owned()).is_ok());
+        assert!(is_existing_file(dir.to_string_lossy().into_owned()).is_err());
+
+        fs::remove_file(file).unwrap();
+        fs::remove_dir_all(dir).unwrap();
+    }
 }

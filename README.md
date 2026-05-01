@@ -59,7 +59,7 @@ The file name indicates the index and the encoding of the logo.
 For example, you want to replace only the big boot logo on a recent phone:
 ```bash
 mkdir /tmp/my-logos
-mtklogo unpack logo.bin -o /tmp/my-logos --mode BgraBig --slots 0
+mtklogo unpack logo.bin -o /tmp/my-logos --mode bgrabe --slots 0
 ```
 * You can edit any ".png" file and replace it with another image, provided
 it has the same dimension (same width and same height). You **must not** change
@@ -91,8 +91,8 @@ This [configuration](cli/resources/bin/mtklogo.yaml) file is loaded from the fol
 
 * specified by user `mtklogo unpack -c /path/to/my/configuration.yaml`
 * in user's home/config directory `~/.config/mtklogo.yaml`
-* as a sibling of the program itself `$(dirname $(which mtklogo))/mtklogo.yaml`
 * as a global configuration file `/etc/mtklogo.yaml`
+* as a sibling of the program itself `$(dirname $(which mtklogo))/mtklogo.yaml`
 
 The default configuration gives a list of common dimensions for "big" logos, assuming the images are encoded in 16 bits rgb.
 It contains two example profiles that you can adapt to your own device.
@@ -198,8 +198,8 @@ It could be 199680 x 4 ... 798720 = (2^10 * 3 * 5 * 13) * 4
 
 This is the easiest way to build and run the tool.
 
-This is built using rust 1.31.1.
-Once you've the rust and cargo [tool chain](https://rustup.rs/), just install it:
+This project targets a modern Rust toolchain.
+Once you have the rust and cargo [tool chain](https://rustup.rs/), just install it:
 
 ```bash
 # install it using cargo

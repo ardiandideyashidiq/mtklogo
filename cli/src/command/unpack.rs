@@ -18,7 +18,7 @@ pub fn run_unpack(config: Config, slots: Option<Vec<usize>>, profile_name: &str,
         } else {
             match profile.alias {
                 None => false,
-                Some(ref aliases) => aliases.contains(&name.to_string())
+                Some(ref aliases) => aliases.iter().any(|alias| alias == name)
             }
         }
     }
