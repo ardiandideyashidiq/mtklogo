@@ -18,7 +18,13 @@ struct WorkflowResult {
 }
 
 #[tauri::command]
-fn unpack_logo(input_path: String, screen_resolution: String) -> Result<WorkflowResult, String> {
+async fn unpack_logo(input_path: String, screen_resolution: String) -> Result<WorkflowResult, String> {
+    tauri::async_runtime::spawn_blocking(move || unpack_logo_impl(input_path, screen_resolution))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn unpack_logo_impl(input_path: String, screen_resolution: String) -> Result<WorkflowResult, String> {
     let input_path = PathBuf::from(input_path);
     let screen_hint = parse_screen_hint(&screen_resolution)?;
     let file = File::open(&input_path).map_err(|e| e.to_string())?;
@@ -69,7 +75,13 @@ fn unpack_logo(input_path: String, screen_resolution: String) -> Result<Workflow
 }
 
 #[tauri::command]
-fn repack_logo(source_dir: String, strip_alpha: bool) -> Result<WorkflowResult, String> {
+async fn repack_logo(source_dir: String, strip_alpha: bool) -> Result<WorkflowResult, String> {
+    tauri::async_runtime::spawn_blocking(move || repack_logo_impl(source_dir, strip_alpha))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn repack_logo_impl(source_dir: String, strip_alpha: bool) -> Result<WorkflowResult, String> {
     let source_dir = PathBuf::from(source_dir);
     if !source_dir.is_dir() {
         return Err(String::from("source directory does not exist"));
@@ -191,13 +203,31 @@ mod tests {
     }
 
     #[test]
+    fn unpack_impl_creates_output_directory() {
+        let dir = std::env::temp_dir().join(format!("mtklogo-gui-test-{}", timestamp()));
+        fs::create_dir_all(&dir).unwrap();
+
+        let raw = vec![0x12_u8; 45 * 56 * 4];
+        let compressed = z_lib::deflate(&raw).unwrap();
+        let image = LogoImage::new_blobs(vec![compressed]);
+        let bin_path = dir.join("logo.bin");
+        let mut writer = BufWriter::new(File::create(&bin_path).unwrap());
+        image.write(&mut writer).unwrap();
+        writer.flush().unwrap();
+
+        let result = unpack_logo_impl(bin_path.to_string_lossy().into_owned(), "45x56".to_string()).unwrap();
+        assert!(Path::new(&result.output_path).is_dir());
+        assert_eq!(result.file_count, 1);
+    }
+
+    #[test]
     fn repack_sorts_files_by_slot_index() {
         let dir = std::env::temp_dir().join(format!("mtklogo-gui-test-{}", timestamp()));
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("logo_010_raw.z"), [10_u8]).unwrap();
         fs::write(dir.join("logo_000_raw.z"), [0_u8]).unwrap();
 
-        let output = repack_logo(dir.to_string_lossy().into_owned(), false).unwrap();
+        let output = repack_logo_impl(dir.to_string_lossy().into_owned(), false).unwrap();
         let mut reader = Cursor::new(fs::read(output.output_path).unwrap());
         let image = LogoImage::read(&mut reader).unwrap();
         assert_eq!(image.blobs, vec![vec![0], vec![10]]);
