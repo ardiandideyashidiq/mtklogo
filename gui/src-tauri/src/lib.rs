@@ -1,104 +1,179 @@
-use std::io::Cursor;
+mod config;
+mod infer;
 
-use mtklogo::{ColorMode, ContentType, FileInfo, LogoImage};
+use infer::{infer_profile, ScreenHint, ScreenHintMode};
 use mtklogo::utils::{image, image::ImageIO, z_lib};
-use serde::{Deserialize, Serialize};
+use mtklogo::{ColorMode, ContentType, FileInfo, LogoImage};
+use serde::Serialize;
+use std::fs::{self, File};
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Serialize)]
-struct LogoSlot {
-    index: usize,
-    raw_size: usize,
-    inflated_size: Option<usize>,
-    inflation_error: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct LogoInspection {
-    slot_count: usize,
-    header_size: u32,
-    block_size: u32,
-    slots: Vec<LogoSlot>,
-    supported_modes: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GuiFile {
-    name: String,
-    bytes: Vec<u8>,
+struct WorkflowResult {
+    output_path: String,
+    timestamp: String,
+    file_count: usize,
 }
 
 #[tauri::command]
-fn inspect_logo(bytes: Vec<u8>) -> Result<LogoInspection, String> {
-    let mut reader = Cursor::new(bytes);
+fn unpack_logo(input_path: String, screen_resolution: String) -> Result<WorkflowResult, String> {
+    let input_path = PathBuf::from(input_path);
+    let screen_hint = parse_screen_hint(&screen_resolution)?;
+    let file = File::open(&input_path).map_err(|e| e.to_string())?;
+    let mut reader = BufReader::new(file);
     let image = LogoImage::read(&mut reader).map_err(|e| e.to_string())?;
-
-    let slots = image
+    let inflated_sizes: Vec<u32> = image
         .blobs
         .iter()
-        .enumerate()
-        .map(|(index, blob)| match z_lib::inflate(blob.as_slice()) {
-            Ok(inflated) => LogoSlot {
-                index,
-                raw_size: blob.len(),
-                inflated_size: Some(inflated.len()),
-                inflation_error: None,
-            },
-            Err(error) => LogoSlot {
-                index,
-                raw_size: blob.len(),
-                inflated_size: None,
-                inflation_error: Some(error.to_string()),
-            },
-        })
-        .collect::<Vec<_>>();
+        .map(|blob| z_lib::inflate(blob.as_slice()).map(|inflated| inflated.len() as u32))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
 
-    Ok(LogoInspection {
-        slot_count: image.blobs.len(),
-        header_size: image.table.header.size,
-        block_size: image.table.block_size,
-        slots,
-        supported_modes: ColorMode::enumerate()
-            .iter()
-            .map(|mode| mode.to_string())
-            .collect(),
+    let profile = infer_profile(&inflated_sizes, Some(screen_hint), ScreenHintMode::Prefer)
+        .ok_or_else(|| String::from("could not infer a profile from the selected logo"))?
+        .to_profile("auto");
+
+    let parent = input_path
+        .parent()
+        .ok_or_else(|| String::from("selected file has no parent directory"))?;
+    let stem = input_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("mtklogo");
+    let timestamp = timestamp();
+    let output_dir = parent.join(format!("{}_{}", stem, timestamp));
+    fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
+
+    for (id, blob) in image.blobs.iter().enumerate() {
+        let inflated = z_lib::inflate(blob.as_slice()).map_err(|e| e.to_string())?;
+        let format = profile.guess_format(inflated.len() as u32, false).map_err(|e| e.to_string())?;
+        let color_mode = ColorMode::by_name(&profile.color_model).map_err(|e| e.to_string())?;
+        let info = FileInfo::from_info(id, false, color_mode);
+        let output_file = output_dir.join(info.filename());
+        let file = File::create(&output_file).map_err(|e| e.to_string())?;
+        let writer = BufWriter::new(file);
+        if let Err(_error) = color_mode.write_png(writer, &inflated, format.w, format.h) {
+            let fallback = output_dir.join(FileInfo::from_info(id, true, color_mode).filename());
+            let mut raw = File::create(fallback).map_err(|e| e.to_string())?;
+            raw.write_all(blob).map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(WorkflowResult {
+        output_path: output_dir.display().to_string(),
+        timestamp,
+        file_count: image.blobs.len(),
     })
 }
 
 #[tauri::command]
-fn repack_logo(files: Vec<GuiFile>, strip_alpha: bool) -> Result<Vec<u8>, String> {
-    let mut blobs = Vec::with_capacity(files.len());
-
-    for file in files {
-        let info = FileInfo::from_name(&file.name).map_err(|e| e.to_string())?;
-        let blob = match info.content_type {
-            ContentType::Z => file.bytes,
-            ContentType::PNG(ref color_mode) => {
-                let (mut rgba, width, height) =
-                    image::png_to_rgba(Cursor::new(file.bytes)).map_err(|e| e.to_string())?;
-                if strip_alpha {
-                    image::strip_alpha(&mut rgba);
-                }
-                let device = color_mode
-                    .rgba_to_device(&rgba, width, height)
-                    .map_err(|e| e.to_string())?;
-                z_lib::deflate(&device).map_err(|e| e.to_string())?
-            }
-        };
-        blobs.push((info.id, blob));
+fn repack_logo(source_dir: String, strip_alpha: bool) -> Result<WorkflowResult, String> {
+    let source_dir = PathBuf::from(source_dir);
+    if !source_dir.is_dir() {
+        return Err(String::from("source directory does not exist"));
     }
 
-    blobs.sort_by(|left, right| left.0.cmp(&right.0));
-    let ordered_blobs = blobs.into_iter().map(|(_, blob)| blob).collect();
-    let image = LogoImage::new_blobs(ordered_blobs);
-    let mut buffer = Vec::new();
-    image.write(&mut buffer).map_err(|e| e.to_string())?;
-    Ok(buffer)
+    let mut files = Vec::new();
+    for entry in fs::read_dir(&source_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| format!("file '{}' is not a possible path.", path.display()))?;
+        let info = FileInfo::from_name(name).map_err(|e| e.to_string())?;
+        files.push((info.id, path, info));
+    }
+
+    if files.is_empty() {
+        return Err(String::from("no logo files found in the selected directory"));
+    }
+
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut blobs = Vec::with_capacity(files.len());
+    for (_, path, info) in files {
+        blobs.push(import_logo(&path, &info, strip_alpha)?);
+    }
+
+    let output_file = repack_output_path(&source_dir)?;
+    let image = LogoImage::new_blobs(blobs);
+    let mut writer = BufWriter::new(File::create(&output_file).map_err(|e| e.to_string())?);
+    image.write(&mut writer).map_err(|e| e.to_string())?;
+
+    Ok(WorkflowResult {
+        output_path: output_file.display().to_string(),
+        timestamp: timestamp(),
+        file_count: image.blobs.len(),
+    })
+}
+
+fn import_logo(path: &Path, info: &FileInfo, strip_alpha: bool) -> Result<Vec<u8>, String> {
+    let file = File::open(path).map_err(|e| e.to_string())?;
+    match info.content_type {
+        ContentType::Z => {
+            let mut raw = Vec::new();
+            BufReader::new(file).read_to_end(&mut raw).map_err(|e| e.to_string())?;
+            Ok(raw)
+        }
+        ContentType::PNG(ref color_mode) => {
+            let (mut rgba, w, h) = image::png_to_rgba(file).map_err(|e| e.to_string())?;
+            if strip_alpha {
+                image::strip_alpha(&mut rgba);
+            }
+            let device = color_mode
+                .rgba_to_device(&rgba, w, h)
+                .map_err(|e| e.to_string())?;
+            z_lib::deflate(&device).map_err(|e| e.to_string())
+        }
+    }
+}
+
+fn repack_output_path(source_dir: &Path) -> Result<PathBuf, String> {
+    let parent = source_dir
+        .parent()
+        .ok_or_else(|| String::from("selected directory has no parent"))?;
+    let name = source_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| String::from("selected directory name is not valid unicode"))?;
+    Ok(parent.join(format!("{}.bin", name)))
+}
+
+fn parse_screen_hint(screen: &str) -> Result<ScreenHint, String> {
+    let tokens: Vec<&str> = screen.split('x').map(|token| token.trim()).collect();
+    if tokens.len() != 2 || tokens.iter().any(|token| token.is_empty()) {
+        return Err(String::from("screen must be WIDTHxHEIGHT"));
+    }
+
+    let width = tokens[0]
+        .parse::<u32>()
+        .map_err(|_| String::from("screen width must be an integer"))?;
+    let height = tokens[1]
+        .parse::<u32>()
+        .map_err(|_| String::from("screen height must be an integer"))?;
+    Ok(ScreenHint { width, height })
+}
+
+fn timestamp() -> String {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs().to_string())
+        .unwrap_or_else(|_| String::from("0"))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![inspect_logo, repack_logo])
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![
+            unpack_logo,
+            repack_logo,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running mtklogo GUI");
 }
@@ -106,59 +181,24 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mtklogo::LogoImage;
+    use std::io::Cursor;
 
     #[test]
-    fn inspect_logo_reports_slots() {
-        let raw = vec![1_u8, 2, 3, 4];
-        let compressed = z_lib::deflate(&raw).unwrap();
-        let image = LogoImage::new_blobs(vec![compressed]);
-        let mut buffer = Vec::new();
-        image.write(&mut buffer).unwrap();
-
-        let inspection = inspect_logo(buffer).unwrap();
-        assert_eq!(inspection.slot_count, 1);
-        assert_eq!(inspection.slots.len(), 1);
-        assert_eq!(inspection.slots[0].raw_size, z_lib::deflate(&raw).unwrap().len());
+    fn timestamped_output_path_ends_with_bin() {
+        let path = repack_output_path(Path::new("/tmp/logo_123")).unwrap();
+        assert!(path.ends_with("logo_123.bin"));
     }
 
     #[test]
-    fn repack_logo_roundtrips_png_slot() {
-        let mut png = Vec::new();
-        let rgba = [0x12, 0x34, 0x56, 0xFF];
-        image::rgba_to_png(&mut png, &rgba, 1, 1).unwrap();
+    fn repack_sorts_files_by_slot_index() {
+        let dir = std::env::temp_dir().join(format!("mtklogo-gui-test-{}", timestamp()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("logo_010_raw.z"), [10_u8]).unwrap();
+        fs::write(dir.join("logo_000_raw.z"), [0_u8]).unwrap();
 
-        let output = repack_logo(
-            vec![GuiFile {
-                name: "logo_000_bgrabe.png".to_string(),
-                bytes: png,
-            }],
-            false,
-        )
-        .unwrap();
-
-        let mut reader = Cursor::new(output);
-        let image = LogoImage::read(&mut reader).unwrap();
-        assert_eq!(image.blobs.len(), 1);
-    }
-
-    #[test]
-    fn repack_logo_sorts_slots_by_filename_index() {
-        let output = repack_logo(
-            vec![
-                GuiFile {
-                    name: "logo_010_raw.z".to_string(),
-                    bytes: vec![10],
-                },
-                GuiFile {
-                    name: "logo_000_raw.z".to_string(),
-                    bytes: vec![0],
-                },
-            ],
-            false,
-        )
-        .unwrap();
-
-        let mut reader = Cursor::new(output);
+        let output = repack_logo(dir.to_string_lossy().into_owned(), false).unwrap();
+        let mut reader = Cursor::new(fs::read(output.output_path).unwrap());
         let image = LogoImage::read(&mut reader).unwrap();
         assert_eq!(image.blobs, vec![vec![0], vec![10]]);
     }

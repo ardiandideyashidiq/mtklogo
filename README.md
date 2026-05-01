@@ -52,6 +52,7 @@ Type `mtklogo help <command>` to get help for a specific command.
 ### GUI
 
 A desktop GUI lives in `gui/` and shares the same Rust core as the CLI.
+It follows a guided unpack/edit/repack flow: pick a `.bin`, enter screen resolution, unpack into a timestamped folder beside the source file, edit the images there, then repack from that folder or another folder you choose.
 
 ```bash
 cd gui
