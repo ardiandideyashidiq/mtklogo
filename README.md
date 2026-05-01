@@ -54,10 +54,20 @@ Type `mtklogo help <command>` to get help for a specific command.
 A desktop GUI lives in `gui/` and shares the same Rust core as the CLI.
 It follows a guided unpack/edit/repack flow: pick a `.bin`, enter screen resolution, unpack into a timestamped folder beside the source file, edit the images there, then repack from that folder or another folder you choose.
 
+#### Install
+
+Download the latest GUI release from GitHub Releases.
+
+* Windows: install the `.msi` package.
+* Debian/Ubuntu: install the `.deb` package, for example `sudo apt install ./mtklogo-gui_0.1.3_amd64.deb`.
+* Arch Linux: install the `.pkg.tar.zst` package, for example `sudo pacman -U ./mtklogo-gui-0.1.3-1-x86_64.pkg.tar.zst`.
+
+#### Run from source
+
 ```bash
 cd gui
-npm install
-npm run tauri:dev
+pnpm install
+pnpm tauri:dev
 ```
 
 ### Main usage
