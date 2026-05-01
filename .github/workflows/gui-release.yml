@@ -1,0 +1,147 @@
+name: GUI Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - id: meta
+        name: Compute release tag
+        run: |
+          VERSION=$(node -p "require('./gui/package.json').version")
+          TAG="gui-v${VERSION}-${GITHUB_RUN_NUMBER}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            bundles: deb
+            upload_path: gui/src-tauri/target/release/bundle/deb
+            artifact_name: gui-deb-Linux
+            arch_package: true
+          - os: windows-latest
+            bundles: msi
+            upload_path: gui/src-tauri/target/release/bundle/msi
+            artifact_name: gui-msi-Windows
+            arch_package: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: gui/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libarchive-tools \
+            libgtk-3-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            zstd \
+            wget
+
+      - name: Install GUI dependencies
+        working-directory: gui
+        run: pnpm install --frozen-lockfile
+
+      - name: Build GUI bundle
+        working-directory: gui
+        run: pnpm tauri build --bundles ${{ matrix.bundles }}
+
+      - name: Build Arch package
+        if: matrix.arch_package
+        working-directory: gui
+        run: pnpm release:arch
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.upload_path }}
+          if-no-files-found: error
+
+      - name: Upload Arch package artifact
+        if: matrix.arch_package
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-arch-Linux
+          path: gui/src-tauri/target/release/bundle/arch
+          if-no-files-found: error
+
+  release:
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Create release tag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = `${{ needs.prepare.outputs.tag }}`;
+            const { owner, repo } = context.repo;
+
+            try {
+              await github.rest.git.createRef({
+                owner,
+                repo,
+                ref: `refs/tags/${tag}`,
+                sha: context.sha,
+              });
+            } catch (error) {
+              if (error.status !== 422) {
+                throw error;
+              }
+            }
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: GUI ${{ needs.prepare.outputs.tag }}
+          generate_release_notes: true
+          files: release-assets/**/*
