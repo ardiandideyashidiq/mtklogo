@@ -37,12 +37,10 @@ jobs:
             bundles: deb
             upload_path: gui/src-tauri/target/release/bundle/deb
             artifact_name: gui-deb-Linux
-            arch_package: true
           - os: windows-latest
             bundles: msi
             upload_path: gui/src-tauri/target/release/bundle/msi
             artifact_name: gui-msi-Windows
-            arch_package: false
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -59,6 +57,11 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gui/src-tauri -> target
+          cache-on-failure: true
+
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -67,15 +70,12 @@ jobs:
             build-essential \
             curl \
             file \
-            imagemagick \
             libayatana-appindicator3-dev \
-            libarchive-tools \
             libgtk-3-dev \
             libssl-dev \
             libwebkit2gtk-4.1-dev \
             librsvg2-dev \
             patchelf \
-            zstd \
             wget
 
       - name: Install GUI dependencies
@@ -86,24 +86,11 @@ jobs:
         working-directory: gui
         run: pnpm tauri build --bundles ${{ matrix.bundles }}
 
-      - name: Build Arch package
-        if: matrix.arch_package
-        working-directory: gui
-        run: pnpm release:arch
-
       - name: Upload bundle artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.upload_path }}
-          if-no-files-found: error
-
-      - name: Upload Arch package artifact
-        if: matrix.arch_package
-        uses: actions/upload-artifact@v4
-        with:
-          name: gui-arch-Linux
-          path: gui/src-tauri/target/release/bundle/arch
           if-no-files-found: error
 
   release:
