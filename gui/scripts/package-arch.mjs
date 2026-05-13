@@ -26,6 +26,8 @@ const runtimeDependencies = [
   'webkit2gtk-4.1',
 ];
 
+const iconSizes = [16, 32, 48, 64, 128, 256, 1024];
+
 function run(command, args, options = {}) {
   execFileSync(command, args, { stdio: 'inherit', ...options });
 }
@@ -108,6 +110,29 @@ function rewriteDesktopEntry(root) {
   fs.rmSync(sourcePath);
 }
 
+function installIconSet(root) {
+  const sourceIcon = path.join(guiDir, 'src-tauri', 'icons', 'icon.png');
+  const iconBaseDir = path.join(root, 'usr', 'share', 'icons', 'hicolor');
+  const pixmapDir = path.join(root, 'usr', 'share', 'pixmaps');
+
+  if (!fs.existsSync(sourceIcon)) {
+    throw new Error(`Missing source icon: ${sourceIcon}`);
+  }
+
+  fs.mkdirSync(pixmapDir, { recursive: true });
+  execFileSync('magick', [sourceIcon, '-resize', '256x256', path.join(pixmapDir, 'mtklogo-gui.png')], {
+    stdio: 'inherit',
+  });
+
+  for (const size of iconSizes) {
+    const sizeDir = path.join(iconBaseDir, `${size}x${size}`, 'apps');
+    fs.mkdirSync(sizeDir, { recursive: true });
+    execFileSync('magick', [sourceIcon, '-resize', `${size}x${size}`, path.join(sizeDir, 'mtklogo-gui.png')], {
+      stdio: 'inherit',
+    });
+  }
+}
+
 function createMtree(root) {
   const mtree = execFileSync(
     'bsdtar',
@@ -119,7 +144,7 @@ function createMtree(root) {
 }
 
 function createPackage(root, outputPath) {
-  const archive = execFileSync('bsdtar', ['-cf', '-', '-C', root, '.'], {
+  const archive = execFileSync('bsdtar', ['-cf', '-', '-C', root, '.PKGINFO', '.MTREE', 'usr'], {
     maxBuffer: 50 * 1024 * 1024,
   });
   execFileSync('zstd', ['-q', '-19', '-T0', '-f', '-o', outputPath], {
@@ -142,6 +167,7 @@ function main() {
     run('bsdtar', ['-xzf', 'data.tar.gz', '-C', extractRoot], { cwd: tempRoot });
 
     rewriteDesktopEntry(extractRoot);
+    installIconSet(extractRoot);
 
     const size = installedSize(extractRoot);
     writePkgInfo(extractRoot, size);
